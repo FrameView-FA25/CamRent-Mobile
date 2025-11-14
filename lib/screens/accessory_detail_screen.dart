@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
-import '../models/camera_model.dart';
-import 'booking_screen.dart';
+import '../models/accessory_model.dart';
+import '../services/api_service.dart';
 import 'booking_list_screen.dart';
 
-class CameraDetailScreen extends StatelessWidget {
-  final CameraModel camera;
+class AccessoryDetailScreen extends StatelessWidget {
+  final AccessoryModel accessory;
 
-  const CameraDetailScreen({super.key, required this.camera});
+  const AccessoryDetailScreen({super.key, required this.accessory});
 
   @override
   Widget build(BuildContext context) {
-    final depositText = camera.depositDetailLabel;
-    final platformFeeText = camera.platformFeeLabel;
-    final branchDisplay = camera.branchDisplayName;
-    final addressDisplay = camera.branchAddressDisplay ?? branchDisplay;
-    final estimatedValueText = camera.estimatedValueLabel;
+    final depositText = accessory.depositDetailLabel;
+    final platformFeeText = accessory.platformFeeLabel;
+    final branchDisplay = accessory.branchDisplayName;
+    final addressDisplay = accessory.branchAddressDisplay ?? branchDisplay;
+    final estimatedValueText = accessory.estimatedValueLabel;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -53,7 +53,7 @@ class CameraDetailScreen extends StatelessWidget {
             children: [
               // Image với hero animation
               Hero(
-                tag: 'camera_${camera.id}',
+                tag: 'accessory_${accessory.id}',
                 child: Container(
                   height: 400,
                   width: double.infinity,
@@ -75,7 +75,7 @@ class CameraDetailScreen extends StatelessWidget {
                           BlendMode.darken,
                         ),
                         child: Image.network(
-                          camera.imageUrl,
+                          accessory.imageUrl,
                           fit: BoxFit.cover,
                           height: 400,
                           loadingBuilder: (context, child, loadingProgress) {
@@ -111,7 +111,7 @@ class CameraDetailScreen extends StatelessWidget {
                               ),
                               child: Center(
                                 child: Icon(
-                                  Icons.camera_alt,
+                                  Icons.memory,
                                   size: 120,
                                   color: Theme.of(
                                     context,
@@ -148,11 +148,13 @@ class CameraDetailScreen extends StatelessWidget {
                           ),
                           decoration: BoxDecoration(
                             color:
-                                camera.isAvailable ? Colors.green : Colors.red,
+                                accessory.isAvailable
+                                    ? Colors.green
+                                    : Colors.red,
                             borderRadius: BorderRadius.circular(20),
                             boxShadow: [
                               BoxShadow(
-                                color: (camera.isAvailable
+                                color: (accessory.isAvailable
                                         ? Colors.green
                                         : Colors.red)
                                     .withOpacity(0.5),
@@ -165,7 +167,7 @@ class CameraDetailScreen extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
-                                camera.isAvailable
+                                accessory.isAvailable
                                     ? Icons.check_circle
                                     : Icons.close,
                                 color: Colors.white,
@@ -173,7 +175,7 @@ class CameraDetailScreen extends StatelessWidget {
                               ),
                               const SizedBox(width: 6),
                               Text(
-                                camera.isAvailable ? 'Có sẵn' : 'Đã thuê',
+                                accessory.isAvailable ? 'Có sẵn' : 'Đã thuê',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 14,
@@ -194,7 +196,7 @@ class CameraDetailScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      camera.brand,
+                      accessory.brand,
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.grey[600],
@@ -203,7 +205,7 @@ class CameraDetailScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      camera.name,
+                      accessory.name,
                       style: const TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
@@ -266,7 +268,7 @@ class CameraDetailScreen extends StatelessWidget {
                                           Theme.of(context).colorScheme.primary,
                                     ),
                                     Text(
-                                      camera.pricePerDayFormatted,
+                                      accessory.pricePerDayFormatted,
                                       style: TextStyle(
                                         fontSize: 28,
                                         fontWeight: FontWeight.bold,
@@ -296,13 +298,13 @@ class CameraDetailScreen extends StatelessWidget {
                             ),
                             decoration: BoxDecoration(
                               color:
-                                  camera.isAvailable
+                                  accessory.isAvailable
                                       ? Colors.green
                                       : Colors.red,
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
-                                  color: (camera.isAvailable
+                                  color: (accessory.isAvailable
                                           ? Colors.green
                                           : Colors.red)
                                       .withOpacity(0.3),
@@ -315,7 +317,7 @@ class CameraDetailScreen extends StatelessWidget {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  camera.isAvailable
+                                  accessory.isAvailable
                                       ? Icons.check_circle
                                       : Icons.close,
                                   color: Colors.white,
@@ -323,7 +325,7 @@ class CameraDetailScreen extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
-                                  camera.isAvailable ? 'Có sẵn' : 'Đã thuê',
+                                  accessory.isAvailable ? 'Có sẵn' : 'Đã thuê',
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold,
@@ -383,14 +385,14 @@ class CameraDetailScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      camera.description,
+                      accessory.description,
                       style: TextStyle(
                         fontSize: 16,
                         color: Colors.grey[700],
                         height: 1.5,
                       ),
                     ),
-                    if (camera.features.isNotEmpty) ...[
+                    if (accessory.features.isNotEmpty) ...[
                       const SizedBox(height: 24),
                       const Text(
                         'Tính năng',
@@ -404,7 +406,7 @@ class CameraDetailScreen extends StatelessWidget {
                         spacing: 8,
                         runSpacing: 8,
                         children:
-                            camera.features.map((feature) {
+                            accessory.features.map((feature) {
                               return Chip(
                                 label: Text(feature),
                                 backgroundColor: Colors.grey[200],
@@ -426,34 +428,44 @@ class CameraDetailScreen extends StatelessWidget {
             height: 50,
             child: ElevatedButton(
               onPressed:
-                  camera.isAvailable
+                  accessory.isAvailable
                       ? () async {
-                        final added = await Navigator.push<bool>(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => BookingScreen(camera: camera),
-                          ),
-                        );
-                        if (added == true && context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Đã thêm ${camera.name} vào giỏ hàng',
-                              ),
-                              action: SnackBarAction(
-                                label: 'Xem giỏ',
-                                onPressed: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder:
-                                          (context) =>
-                                              const BookingListScreen(),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
+                        try {
+                          await ApiService.addAccessoryToCart(
+                            accessoryId: accessory.id,
                           );
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Đã thêm ${accessory.name} vào giỏ hàng',
+                                ),
+                                action: SnackBarAction(
+                                  label: 'Xem giỏ',
+                                  onPressed: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder:
+                                            (context) =>
+                                                const BookingListScreen(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  e.toString().replaceFirst('Exception: ', ''),
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
                         }
                       }
                       : null,
@@ -465,7 +477,7 @@ class CameraDetailScreen extends StatelessWidget {
                 foregroundColor: Colors.white,
               ),
               child: Text(
-                camera.isAvailable ? 'Đặt lịch thuê' : 'Không khả dụng',
+                accessory.isAvailable ? 'Thêm vào giỏ hàng' : 'Không khả dụng',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -490,16 +502,14 @@ class CameraDetailScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey[200]!, width: 1),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
-        border: Border.all(
-          color: Theme.of(context).colorScheme.primary.withOpacity(0.08),
-        ),
       ),
       child: Row(
         crossAxisAlignment:
@@ -508,15 +518,15 @@ class CameraDetailScreen extends StatelessWidget {
                 : CrossAxisAlignment.center,
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
               icon,
+              size: 24,
               color: Theme.of(context).colorScheme.primary,
-              size: 20,
             ),
           ),
           const SizedBox(width: 16),
@@ -527,7 +537,7 @@ class CameraDetailScreen extends StatelessWidget {
                 Text(
                   title,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 12,
                     color: Colors.grey[600],
                     fontWeight: FontWeight.w600,
                   ),
@@ -537,14 +547,14 @@ class CameraDetailScreen extends StatelessWidget {
                   value,
                   style: const TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
                 if (subtitle != null) ...[
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                 ],
               ],

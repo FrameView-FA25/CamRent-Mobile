@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import '../models/camera_model.dart';
+import '../services/api_service.dart';
 
 class BookingScreen extends StatefulWidget {
   final CameraModel camera;
 
-  const BookingScreen({
-    super.key,
-    required this.camera,
-  });
+  const BookingScreen({super.key, required this.camera});
 
   @override
   State<BookingScreen> createState() => _BookingScreenState();
@@ -21,6 +19,7 @@ class _BookingScreenState extends State<BookingScreen> {
   final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
   final _addressController = TextEditingController();
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
@@ -51,9 +50,7 @@ class _BookingScreenState extends State<BookingScreen> {
   Future<void> _selectEndDate() async {
     if (_startDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Vui lòng chọn ngày bắt đầu trước'),
-        ),
+        const SnackBar(content: Text('Vui lòng chọn ngày bắt đầu trước')),
       );
       return;
     }
@@ -91,52 +88,69 @@ class _BookingScreenState extends State<BookingScreen> {
       // Show confirmation dialog
       final confirmed = await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Xác nhận đặt lịch'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Máy ảnh: ${widget.camera.name}'),
-              const SizedBox(height: 8),
-              Text('Ngày bắt đầu: ${_formatDate(_startDate!)}'),
-              Text('Ngày kết thúc: ${_formatDate(_endDate!)}'),
-              const SizedBox(height: 8),
-              Text(
-                'Tổng tiền: ${_formatPrice(_calculateTotal())}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
+        builder:
+            (context) => AlertDialog(
+              title: const Text('Thêm vào giỏ hàng'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Máy ảnh: ${widget.camera.name}'),
+                  const SizedBox(height: 8),
+                  Text('Ngày bắt đầu: ${_formatDate(_startDate!)}'),
+                  Text('Ngày kết thúc: ${_formatDate(_endDate!)}'),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tổng tiền dự kiến: ${_formatPrice(_calculateTotal())}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Hủy'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Hủy'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Thêm'),
+                ),
+              ],
             ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Xác nhận'),
-            ),
-          ],
-        ),
       );
 
       if (confirmed == true && mounted) {
-        // Simulate booking API call
-        await Future.delayed(const Duration(seconds: 1));
+        await _addToCart();
+      }
+    }
+  }
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Đặt lịch thành công!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          Navigator.of(context).pop();
-        }
+  Future<void> _addToCart() async {
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      await ApiService.addCameraToCart(cameraId: widget.camera.id);
+
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
       }
     }
   }
@@ -151,14 +165,13 @@ class _BookingScreenState extends State<BookingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final totalDays = _startDate != null && _endDate != null
-        ? _endDate!.difference(_startDate!).inDays + 1
-        : 0;
+    final totalDays =
+        _startDate != null && _endDate != null
+            ? _endDate!.difference(_startDate!).inDays + 1
+            : 0;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Đặt lịch thuê máy ảnh'),
-      ),
+      appBar: AppBar(title: const Text('Đặt lịch thuê máy ảnh')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Form(
@@ -229,10 +242,7 @@ class _BookingScreenState extends State<BookingScreen> {
               const SizedBox(height: 24),
               const Text(
                 'Thông tin ngày thuê',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
               // Start date
@@ -253,9 +263,8 @@ class _BookingScreenState extends State<BookingScreen> {
                         ? _formatDate(_startDate!)
                         : 'Chọn ngày bắt đầu',
                     style: TextStyle(
-                      color: _startDate != null
-                          ? Colors.black
-                          : Colors.grey[600],
+                      color:
+                          _startDate != null ? Colors.black : Colors.grey[600],
                     ),
                   ),
                 ),
@@ -287,10 +296,7 @@ class _BookingScreenState extends State<BookingScreen> {
               const SizedBox(height: 24),
               const Text(
                 'Thông tin liên hệ',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
               // Name field
@@ -387,7 +393,9 @@ class _BookingScreenState extends State<BookingScreen> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Column(
@@ -461,7 +469,7 @@ class _BookingScreenState extends State<BookingScreen> {
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: _submitBooking,
+                  onPressed: _isSubmitting ? null : _submitBooking,
                   style: ElevatedButton.styleFrom(
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -469,13 +477,25 @@ class _BookingScreenState extends State<BookingScreen> {
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Colors.white,
                   ),
-                  child: const Text(
-                    'Xác nhận đặt lịch',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  child:
+                      _isSubmitting
+                          ? const SizedBox(
+                            height: 22,
+                            width: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
+                          )
+                          : const Text(
+                            'Thêm vào giỏ hàng',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                 ),
               ),
             ],
@@ -485,4 +505,3 @@ class _BookingScreenState extends State<BookingScreen> {
     );
   }
 }
-

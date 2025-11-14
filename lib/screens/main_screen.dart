@@ -53,9 +53,9 @@ class _MainScreenState extends State<MainScreen> {
               label: 'Trang chủ',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.calendar_today_outlined),
-              activeIcon: Icon(Icons.calendar_today),
-              label: 'Đặt lịch',
+              icon: Icon(Icons.shopping_cart_outlined),
+              activeIcon: Icon(Icons.shopping_cart),
+              label: 'Giỏ hàng',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.person_outline),
@@ -68,4 +68,3 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 }
-

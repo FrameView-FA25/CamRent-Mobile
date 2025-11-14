@@ -1,8 +1,93 @@
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 import 'login_screen.dart';
+import 'booking_list_screen.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  bool _isLoading = true;
+  Map<String, dynamic>? _profileData;
+  String? _error;
+  int _bookingCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+    _loadBookingCount();
+  }
+
+  Future<void> _loadProfile() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final data = await ApiService.getProfile();
+      if (mounted) {
+        setState(() {
+          _profileData = data;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString().replaceFirst('Exception: ', '');
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadBookingCount() async {
+    try {
+      final bookings = await ApiService.getBookings();
+      if (mounted) {
+        setState(() {
+          _bookingCount = bookings.length;
+        });
+      }
+    } catch (e) {
+      // Ignore error, just don't update count
+    }
+  }
+
+  String _getDisplayName() {
+    if (_profileData == null) return 'Người dùng';
+    return _profileData!['fullName'] ?? _profileData!['email'] ?? 'Người dùng';
+  }
+
+  String _getEmail() {
+    if (_profileData == null) return 'user@example.com';
+    return _profileData!['email'] ?? 'user@example.com';
+  }
+
+  String _getPhone() {
+    if (_profileData == null) return '';
+    return _profileData!['phone'] ?? '';
+  }
+
+  String? _getAddress() {
+    if (_profileData == null) return null;
+    final address = _profileData!['address'];
+    if (address is Map<String, dynamic>) {
+      final parts = <String>[];
+      if (address['street'] != null) parts.add(address['street']);
+      if (address['ward'] != null) parts.add(address['ward']);
+      if (address['district'] != null) parts.add(address['district']);
+      if (address['city'] != null) parts.add(address['city']);
+      return parts.isEmpty ? null : parts.join(', ');
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,15 +121,16 @@ class ProfileScreen extends StatelessWidget {
                           gradient: LinearGradient(
                             colors: [
                               Theme.of(context).colorScheme.primary,
-                              Theme.of(context).colorScheme.primary.withOpacity(0.7),
+                              Theme.of(
+                                context,
+                              ).colorScheme.primary.withOpacity(0.7),
                             ],
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .primary
-                                  .withOpacity(0.3),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withOpacity(0.3),
                               blurRadius: 20,
                               offset: const Offset(0, 10),
                             ),
@@ -59,58 +145,111 @@ class ProfileScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      // Tên người dùng
-                      const Text(
-                        'Nguyễn Văn A',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
+                      // Loading or Error state
+                      if (_isLoading)
+                        const Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: CircularProgressIndicator(),
+                        )
+                      else if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            children: [
+                              Text(
+                                'Lỗi: $_error',
+                                style: TextStyle(
+                                  color: Colors.red[600],
+                                  fontSize: 14,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 8),
+                              ElevatedButton.icon(
+                                onPressed: _loadProfile,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Thử lại'),
+                              ),
+                            ],
+                          ),
+                        )
+                      else ...[
+                        // Tên người dùng
+                        Text(
+                          _getDisplayName(),
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      // Email
-                      Text(
-                        'user@example.com',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
+                        const SizedBox(height: 4),
+                        // Email
+                        Text(
+                          _getEmail(),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Stats
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _buildStatItem(
-                            context,
-                            'Đã thuê',
-                            '12',
-                            Icons.camera_alt,
-                          ),
-                          Container(
-                            width: 1,
-                            height: 40,
-                            color: Colors.grey[300],
-                          ),
-                          _buildStatItem(
-                            context,
-                            'Yêu thích',
-                            '5',
-                            Icons.favorite,
-                          ),
-                          Container(
-                            width: 1,
-                            height: 40,
-                            color: Colors.grey[300],
-                          ),
-                          _buildStatItem(
-                            context,
-                            'Đánh giá',
-                            '4.8',
-                            Icons.star,
+                        if (_getPhone().isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            _getPhone(),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
                           ),
                         ],
-                      ),
+                        if (_getAddress() != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            _getAddress()!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[500],
+                            ),
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        // Stats
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _buildStatItem(
+                              context,
+                              'Đã thuê',
+                              '$_bookingCount',
+                              Icons.camera_alt,
+                            ),
+                            Container(
+                              width: 1,
+                              height: 40,
+                              color: Colors.grey[300],
+                            ),
+                            _buildStatItem(
+                              context,
+                              'Giỏ hàng',
+                              '0',
+                              Icons.shopping_cart,
+                            ),
+                            Container(
+                              width: 1,
+                              height: 40,
+                              color: Colors.grey[300],
+                            ),
+                            _buildStatItem(
+                              context,
+                              'Đánh giá',
+                              '5.0',
+                              Icons.star,
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -139,9 +278,10 @@ class ProfileScreen extends StatelessWidget {
                         title: 'Lịch sử thuê',
                         subtitle: 'Xem các lần thuê trước đây',
                         onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Tính năng đang phát triển'),
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const BookingListScreen(),
                             ),
                           );
                         },
@@ -209,10 +349,7 @@ class ProfileScreen extends StatelessWidget {
                         height: 50,
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
-                            colors: [
-                              Colors.red[400]!,
-                              Colors.red[600]!,
-                            ],
+                            colors: [Colors.red[400]!, Colors.red[600]!],
                           ),
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
@@ -227,31 +364,41 @@ class ProfileScreen extends StatelessWidget {
                           onPressed: () {
                             showDialog(
                               context: context,
-                              builder: (context) => AlertDialog(
-                                title: const Text('Đăng xuất'),
-                                content: const Text('Bạn có chắc chắn muốn đăng xuất?'),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(context),
-                                    child: const Text('Hủy'),
-                                  ),
-                                  ElevatedButton(
-                                    onPressed: () {
-                                      Navigator.of(context).pushAndRemoveUntil(
-                                        MaterialPageRoute(
-                                          builder: (context) => const LoginScreen(),
-                                        ),
-                                        (route) => false,
-                                      );
-                                    },
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.red,
-                                      foregroundColor: Colors.white,
+                              builder:
+                                  (context) => AlertDialog(
+                                    title: const Text('Đăng xuất'),
+                                    content: const Text(
+                                      'Bạn có chắc chắn muốn đăng xuất?',
                                     ),
-                                    child: const Text('Đăng xuất'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context),
+                                        child: const Text('Hủy'),
+                                      ),
+                                      ElevatedButton(
+                                        onPressed: () async {
+                                          await ApiService.clearToken();
+                                          if (context.mounted) {
+                                            Navigator.of(
+                                              context,
+                                            ).pushAndRemoveUntil(
+                                              MaterialPageRoute(
+                                                builder:
+                                                    (context) =>
+                                                        const LoginScreen(),
+                                              ),
+                                              (route) => false,
+                                            );
+                                          }
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                          foregroundColor: Colors.white,
+                                        ),
+                                        child: const Text('Đăng xuất'),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
                             );
                           },
                           style: ElevatedButton.styleFrom(
@@ -298,11 +445,7 @@ class ProfileScreen extends StatelessWidget {
   ) {
     return Column(
       children: [
-        Icon(
-          icon,
-          color: Theme.of(context).colorScheme.primary,
-          size: 28,
-        ),
+        Icon(icon, color: Theme.of(context).colorScheme.primary, size: 28),
         const SizedBox(height: 8),
         Text(
           value,
@@ -313,13 +456,7 @@ class ProfileScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-          ),
-        ),
+        Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
       ],
     );
   }
@@ -333,9 +470,7 @@ class ProfileScreen extends StatelessWidget {
   }) {
     return Card(
       elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
@@ -347,16 +482,10 @@ class ProfileScreen extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .primary
-                      .withOpacity(0.1),
+                  color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
-                  icon,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
+                child: Icon(icon, color: Theme.of(context).colorScheme.primary),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -373,18 +502,12 @@ class ProfileScreen extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                     ),
                   ],
                 ),
               ),
-              Icon(
-                Icons.chevron_right,
-                color: Colors.grey[400],
-              ),
+              Icon(Icons.chevron_right, color: Colors.grey[400]),
             ],
           ),
         ),
@@ -392,4 +515,3 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 }
-
