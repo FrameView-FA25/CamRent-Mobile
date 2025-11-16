@@ -6,12 +6,18 @@ class CameraCard extends StatelessWidget {
   final CameraModel? camera;
   final AccessoryModel? accessory;
   final VoidCallback? onTap;
+  final VoidCallback? onAddToCart;
 
-  const CameraCard({super.key, this.camera, this.accessory, this.onTap})
-    : assert(
-        camera != null || accessory != null,
-        'Either camera or accessory must be provided',
-      );
+  const CameraCard({
+    super.key,
+    this.camera,
+    this.accessory,
+    this.onTap,
+    this.onAddToCart,
+  }) : assert(
+          camera != null || accessory != null,
+          'Either camera or accessory must be provided',
+        );
 
   bool get _isAccessory => accessory != null;
   String get _id => _isAccessory ? accessory!.id : camera!.id;
@@ -284,6 +290,29 @@ class CameraCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  // Add to cart button (plus icon)
+                  if (_isAvailable && onAddToCart != null)
+                    Positioned(
+                      bottom: 16,
+                      right: 16,
+                      child: Material(
+                        color: Theme.of(context).colorScheme.primary,
+                        shape: const CircleBorder(),
+                        elevation: 4,
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: onAddToCart,
+                          child: const Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: Icon(
+                              Icons.add,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),

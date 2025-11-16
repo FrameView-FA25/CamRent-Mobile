@@ -177,6 +177,33 @@ class _HomeScreenState extends State<HomeScreen> {
     _filterProducts();
   }
 
+  Future<void> _handleAddToCart(ProductItem product) async {
+    try {
+      if (product.type == ProductType.camera) {
+        await ApiService.addCameraToCart(cameraId: product.id);
+      } else {
+        await ApiService.addAccessoryToCart(accessoryId: product.id);
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Đã thêm "${product.name}" vào giỏ hàng'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceFirst('Exception: ', ''),
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -555,6 +582,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             );
                           }
                         },
+                        onAddToCart: product.isAvailable
+                            ? () => _handleAddToCart(product)
+                            : null,
                       ),
                     );
                   }, childCount: _filteredProducts.length),
