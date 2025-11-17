@@ -5,6 +5,7 @@ import '../models/booking_model.dart';
 import '../models/camera_model.dart';
 import '../services/api_service.dart';
 import 'camera_detail_screen.dart';
+import 'checkout_screen.dart';
 
 class BookingListScreen extends StatefulWidget {
   const BookingListScreen({super.key});
@@ -332,207 +333,6 @@ class _BookingListScreenState extends State<BookingListScreen>
     }
   }
 
-  Future<void> _showCreateBookingDialog(BuildContext context) async {
-    final nameController = TextEditingController();
-    final phoneController = TextEditingController();
-    final emailController = TextEditingController();
-    final addressController = TextEditingController();
-    final notesController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-    bool isSubmitting = false;
-
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder:
-          (dialogContext) => StatefulBuilder(
-            builder:
-                (context, setDialogState) => AlertDialog(
-                  title: const Text('Tạo đặt lịch từ giỏ hàng'),
-                  content: SingleChildScrollView(
-                    child: Form(
-                      key: formKey,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Bạn có ${_cartItems.length} sản phẩm trong giỏ hàng',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[700],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: nameController,
-                            decoration: const InputDecoration(
-                              labelText: 'Họ và tên *',
-                              border: OutlineInputBorder(),
-                            ),
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Vui lòng nhập họ và tên';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: phoneController,
-                            decoration: const InputDecoration(
-                              labelText: 'Số điện thoại *',
-                              border: OutlineInputBorder(),
-                            ),
-                            keyboardType: TextInputType.phone,
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Vui lòng nhập số điện thoại';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: emailController,
-                            decoration: const InputDecoration(
-                              labelText: 'Email *',
-                              border: OutlineInputBorder(),
-                            ),
-                            keyboardType: TextInputType.emailAddress,
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Vui lòng nhập email';
-                              }
-                              if (!value.contains('@')) {
-                                return 'Email không hợp lệ';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: addressController,
-                            decoration: const InputDecoration(
-                              labelText: 'Địa chỉ',
-                              border: OutlineInputBorder(),
-                            ),
-                            maxLines: 2,
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: notesController,
-                            decoration: const InputDecoration(
-                              labelText: 'Ghi chú',
-                              border: OutlineInputBorder(),
-                            ),
-                            maxLines: 3,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed:
-                          isSubmitting
-                              ? null
-                              : () {
-                                Navigator.pop(dialogContext);
-                              },
-                      child: const Text('Hủy'),
-                    ),
-                    ElevatedButton(
-                      onPressed:
-                          isSubmitting
-                              ? null
-                              : () async {
-                                if (formKey.currentState!.validate()) {
-                                  setDialogState(() {
-                                    isSubmitting = true;
-                                  });
-
-                                  try {
-                                    await ApiService.createBookingFromCart(
-                                      customerName: nameController.text.trim(),
-                                      customerPhone:
-                                          phoneController.text.trim(),
-                                      customerEmail:
-                                          emailController.text.trim(),
-                                      customerAddress:
-                                          addressController.text.trim().isEmpty
-                                              ? null
-                                              : addressController.text.trim(),
-                                      notes:
-                                          notesController.text.trim().isEmpty
-                                              ? null
-                                              : notesController.text.trim(),
-                                    );
-
-                                    if (context.mounted) {
-                                      Navigator.pop(dialogContext);
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'Đã tạo đặt lịch thành công!',
-                                          ),
-                                          backgroundColor: Colors.green,
-                                        ),
-                                      );
-                                      // Reload cart và history
-                                      await _loadCart();
-                                      await _loadHistory();
-                                      // Chuyển sang tab lịch sử
-                                      _tabController.animateTo(1);
-                                    }
-                                  } catch (e) {
-                                    setDialogState(() {
-                                      isSubmitting = false;
-                                    });
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            e.toString().replaceFirst(
-                                              'Exception: ',
-                                              '',
-                                            ),
-                                          ),
-                                          backgroundColor: Colors.red,
-                                        ),
-                                      );
-                                    }
-                                  }
-                                }
-                              },
-                      child:
-                          isSubmitting
-                              ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                              : const Text('Tạo đặt lịch'),
-                    ),
-                  ],
-                ),
-          ),
-    );
-
-    nameController.dispose();
-    phoneController.dispose();
-    emailController.dispose();
-    addressController.dispose();
-    notesController.dispose();
-  }
-
   String _formatCurrency(double value) {
     if (value <= 0) return '0 VNĐ';
     final raw = value.toStringAsFixed(0);
@@ -767,11 +567,26 @@ class _BookingListScreenState extends State<BookingListScreen>
                       ElevatedButton.icon(
                         onPressed:
                             _cartItems.isNotEmpty
-                                ? () => _showCreateBookingDialog(context)
+                                ? () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => CheckoutScreen(
+                                          cartItems: _cartItems,
+                                          totalAmount: _totalAmount,
+                                          depositAmount: _depositAmount,
+                                        ),
+                                      ),
+                                    ).then((_) {
+                                      // Reload cart sau khi quay lại
+                                      _loadCart();
+                                      _loadHistory();
+                                    });
+                                  }
                                 : null,
-                        icon: const Icon(Icons.event_available),
+                        icon: const Icon(Icons.payment),
                         label: const Text(
-                          'Tạo đặt lịch',
+                          'Thanh toán',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
