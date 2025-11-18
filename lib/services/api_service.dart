@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -31,6 +32,74 @@ enum BookingItemType {
 
 class ApiService {
   static const String baseUrl = 'https://camrent-backend.up.railway.app/api';
+
+  static String? _extractErrorMessage(String? body) {
+    if (body == null || body.trim().isEmpty) {
+      return null;
+    }
+
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        const keys = ['message', 'error', 'errorMessage', 'detail'];
+        for (final key in keys) {
+          final value = decoded[key];
+          if (value is String && value.trim().isNotEmpty) {
+            return value.trim();
+          }
+        }
+        final firstString = decoded.values.firstWhere(
+          (value) => value is String && value.trim().isNotEmpty,
+          orElse: () => null,
+        );
+        if (firstString is String) {
+          return firstString.trim();
+        }
+      }
+      if (decoded is String && decoded.trim().isNotEmpty) {
+        return decoded.trim();
+      }
+    } catch (_) {
+      // Fall back to raw body
+    }
+
+    return body.trim();
+  }
+
+  static String? _extractToken(dynamic source) {
+    if (source == null) return null;
+
+    if (source is String && source.trim().isNotEmpty) {
+      // Strings cannot contain token info unless already the token value.
+      return null;
+    }
+
+    if (source is Map<String, dynamic>) {
+      for (final key in ['token', 'accessToken', 'access_token']) {
+        final value = source[key];
+        if (value is String && value.trim().isNotEmpty) {
+          return value.trim();
+        }
+      }
+
+      // Recursively search nested payloads
+      for (final value in source.values) {
+        final possible = _extractToken(value);
+        if (possible != null) {
+          return possible;
+        }
+      }
+    } else if (source is List) {
+      for (final item in source) {
+        final possible = _extractToken(item);
+        if (possible != null) {
+          return possible;
+        }
+      }
+    }
+
+    return null;
+  }
 
   // Get auth token from shared preferences
   static Future<String?> _getToken() async {
@@ -112,11 +181,48 @@ class ApiService {
         body: jsonEncode({'email': email, 'password': password}),
       );
 
+       final statusCode = response.statusCode;
+       final errorBody = response.body;
+
+       bool _looksLikeCredentialIssue(String? message) {
+         if (message == null) return false;
+         final lowered = message.toLowerCase();
+         const keywords = [
+           'password',
+           'credential',
+           'email',
+           'username',
+           'account',
+           'invalid',
+           'incorrect',
+           'unauthorized',
+         ];
+         return keywords.any(lowered.contains);
+       }
+
+       if (statusCode == 400 ||
+           statusCode == 401 ||
+           statusCode == 403 ||
+           (statusCode >= 500 && _looksLikeCredentialIssue(errorBody))) {
+         throw Exception(
+           _extractErrorMessage(errorBody) ??
+               'Email hoặc mật khẩu không chính xác',
+         );
+       }
+
+       if (statusCode >= 500) {
+         throw Exception(
+           _extractErrorMessage(errorBody) ??
+               'Máy chủ đang gặp sự cố, vui lòng thử lại sau.',
+         );
+       }
+
       final data = _handleResponse(response);
 
       // Save token if available
-      if (data['token'] != null) {
-        await _saveToken(data['token']);
+      final token = _extractToken(data);
+      if (token != null) {
+        await _saveToken(token);
       }
 
       return data;
@@ -160,14 +266,9 @@ class ApiService {
       final data = _handleResponse(response);
 
       // Save token if available (check multiple possible token field names)
-      if (data['token'] != null) {
-        await _saveToken(data['token']);
-      } else if (data['accessToken'] != null) {
-        await _saveToken(data['accessToken']);
-      } else if (data['access_token'] != null) {
-        await _saveToken(data['access_token']);
-      } else if (data['data']?['token'] != null) {
-        await _saveToken(data['data']['token']);
+      final token = _extractToken(data);
+      if (token != null) {
+        await _saveToken(token);
       }
 
       return data;
@@ -414,16 +515,20 @@ class ApiService {
     }
   }
 
-  // Create booking from cart
+  // Create booking from cart with payment integration
   static Future<Map<String, dynamic>> createBookingFromCart({
     required String customerName,
     required String customerPhone,
     required String customerEmail,
     String? customerAddress,
     String? notes,
+    bool createPayment = true,
+    double? paymentAmount,
+    String? paymentDescription,
   }) async {
     try {
-      final response = await http.post(
+      // Step 1: Create booking
+      final bookingResponse = await http.post(
         Uri.parse('$baseUrl/Bookings'),
         headers: await _getHeaders(requiresAuth: true),
         body: jsonEncode({
@@ -436,9 +541,186 @@ class ApiService {
         }),
       );
 
-      return _handleResponse(response);
+      final bookingData = _handleResponse(bookingResponse);
+      
+      // Step 2: Create payment authorization if requested
+      if (createPayment) {
+        final bookingId = bookingData['id']?.toString() ?? 
+                         bookingData['bookingId']?.toString();
+        
+        if (bookingId != null && bookingId.isNotEmpty) {
+          try {
+            // Create payment authorization
+            final paymentId = await createPaymentAuthorization(
+              bookingId: bookingId,
+            );
+            
+            // Initialize VNPay/VietQR payment if amount is provided
+            String? paymentUrl;
+            if (paymentAmount != null && paymentAmount > 0) {
+              paymentUrl = await initializeVnPayPayment(
+                paymentId: paymentId,
+                amount: paymentAmount,
+                description: paymentDescription ?? 
+                          'Thanh toán đặt cọc cho đơn hàng $bookingId',
+              );
+            }
+            
+            // Merge payment info into booking data
+            return {
+              ...bookingData,
+              'paymentId': paymentId,
+              'paymentUrl': paymentUrl,
+            };
+          } catch (e) {
+            // If payment creation fails, still return booking data
+            // but log the error
+            // Log error but don't throw - booking is still created
+            debugPrint('Warning: Failed to create payment: $e');
+            return bookingData;
+          }
+        }
+      }
+      
+      return bookingData;
     } catch (e) {
       throw Exception('Failed to create booking from cart: ${e.toString()}');
+    }
+  }
+  
+  // Payment APIs
+  static Future<String> createPaymentAuthorization({
+    required String bookingId,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/Payments/authorize'),
+        headers: await _getHeaders(requiresAuth: true),
+        body: jsonEncode({
+          'bookingId': bookingId,
+        }),
+      );
+
+      final statusCode = response.statusCode;
+      final body = response.body;
+
+      if (statusCode >= 200 && statusCode < 300) {
+        if (body.isEmpty) {
+          throw Exception('Empty response from payment authorization');
+        }
+        
+        try {
+          // API may return UUID string directly (as JSON string)
+          final decoded = jsonDecode(body);
+          if (decoded is String) {
+            return decoded;
+          }
+          
+          // Or return as object with id field
+          if (decoded is Map<String, dynamic>) {
+            final id = decoded['id']?.toString() ?? 
+                       decoded['paymentId']?.toString();
+            if (id != null && id.isNotEmpty) {
+              return id;
+            }
+            throw Exception('Payment ID not found in response');
+          }
+          
+          // Fallback: return as string
+          return decoded.toString();
+        } catch (e) {
+          // If JSON decode fails, try using body as string directly
+          // (in case API returns plain string without JSON encoding)
+          final trimmedBody = body.trim();
+          if (trimmedBody.startsWith('"') && trimmedBody.endsWith('"')) {
+            // Remove JSON string quotes
+            return trimmedBody.substring(1, trimmedBody.length - 1);
+          }
+          return trimmedBody;
+        }
+      }
+
+      throw Exception('Payment authorization failed: $statusCode');
+    } catch (e) {
+      throw Exception('Failed to create payment authorization: ${e.toString()}');
+    }
+  }
+  
+  static Future<String> initializeVnPayPayment({
+    required String paymentId,
+    required double amount,
+    String? description,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/Payments/$paymentId/vnpay'),
+        headers: await _getHeaders(requiresAuth: true),
+        body: jsonEncode({
+          'amount': amount,
+          if (description != null && description.isNotEmpty)
+            'description': description,
+        }),
+      );
+
+      final statusCode = response.statusCode;
+      final body = response.body;
+
+      if (statusCode >= 200 && statusCode < 300) {
+        if (body.isEmpty) {
+          throw Exception('Empty response from VNPay initialization');
+        }
+        
+        try {
+          // API may return payment URL string directly (as JSON string)
+          final decoded = jsonDecode(body);
+          if (decoded is String) {
+            return decoded;
+          }
+          
+          // Or return as object with url field
+          if (decoded is Map<String, dynamic>) {
+            return decoded['url']?.toString() ?? 
+                   decoded['paymentUrl']?.toString() ?? 
+                   decoded['vnpayUrl']?.toString() ?? 
+                   '';
+          }
+          
+          // Fallback: return as string
+          return decoded.toString();
+        } catch (e) {
+          // If JSON decode fails, try using body as string directly
+          // (in case API returns plain string without JSON encoding)
+          final trimmedBody = body.trim();
+          if (trimmedBody.startsWith('"') && trimmedBody.endsWith('"')) {
+            // Remove JSON string quotes
+            return trimmedBody.substring(1, trimmedBody.length - 1);
+          }
+          return trimmedBody;
+        }
+      }
+
+      throw Exception('VNPay initialization failed: $statusCode');
+    } catch (e) {
+      throw Exception('Failed to initialize VNPay payment: ${e.toString()}');
+    }
+  }
+  
+  static Future<void> capturePayment({
+    required String paymentId,
+    double? amount,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/Payments/$paymentId/capture'),
+        headers: await _getHeaders(requiresAuth: true),
+        body: jsonEncode({
+          if (amount != null && amount > 0) 'amount': amount,
+        }),
+      );
+
+      _handleResponse(response);
+    } catch (e) {
+      throw Exception('Failed to capture payment: ${e.toString()}');
     }
   }
 

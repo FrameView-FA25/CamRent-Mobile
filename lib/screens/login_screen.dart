@@ -112,37 +112,21 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 40),
                     // Logo/Icon với container nổi bật
                     Center(
-                      child: Container(
-                        width: 140,
-                        height: 140,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Colors.white.withOpacity(0.95),
-                              Colors.white.withOpacity(0.85),
-                            ],
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.2),
-                              blurRadius: 30,
-                              offset: const Offset(0, 15),
-                              spreadRadius: 5,
-                            ),
-                            BoxShadow(
-                              color: Colors.white.withOpacity(0.3),
-                              blurRadius: 20,
-                              offset: const Offset(-5, -5),
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.camera_alt,
-                          size: 80,
-                          color: Theme.of(context).colorScheme.primary,
+                      child: ShaderMask(
+                        shaderCallback:
+                            (bounds) => LinearGradient(
+                              colors: [
+                                Theme.of(context).colorScheme.primary,
+                                Theme.of(context)
+                                    .colorScheme
+                                    .primary
+                                    .withOpacity(0.7),
+                              ],
+                            ).createShader(bounds),
+                        child: const Icon(
+                          Icons.photo_camera_front_rounded,
+                          size: 90,
+                          color: Colors.white,
                         ),
                       ),
                     ),
@@ -153,53 +137,27 @@ class _LoginScreenState extends State<LoginScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 14,
+                            horizontal: 24,
+                            vertical: 16,
                           ),
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Colors.white.withOpacity(0.95),
-                                Colors.white.withOpacity(0.9),
-                              ],
-                            ),
+                            color: Colors.transparent,
                             borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.15),
-                                blurRadius: 25,
-                                offset: const Offset(0, 10),
-                                spreadRadius: 2,
-                              ),
-                            ],
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.7),
+                              width: 1.5,
+                            ),
                           ),
-                          child: ShaderMask(
-                            shaderCallback:
-                                (bounds) => LinearGradient(
-                                  colors: [
-                                    Theme.of(context).colorScheme.primary,
-                                    Theme.of(context).colorScheme.secondary,
-                                  ],
-                                ).createShader(bounds),
-                            child: Text(
-                              'Camera For Rent',
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.playfairDisplay(
-                                fontSize: 34,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                                letterSpacing: 1.2,
-                                height: 1.1,
-                                shadows: const [
-                                  Shadow(
-                                    color: Colors.black38,
-                                    offset: Offset(2, 2),
-                                    blurRadius: 6,
-                                  ),
-                                ],
-                              ),
+                          child: Text(
+                            'Camera For Rent',
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.playfairDisplay(
+                              fontSize: 34,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                              letterSpacing: 1.1,
                             ),
                           ),
                         ),
@@ -210,15 +168,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Container(
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
+                        color: Colors.transparent,
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,

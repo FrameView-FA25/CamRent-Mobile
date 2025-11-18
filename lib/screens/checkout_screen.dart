@@ -69,6 +69,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
 
     try {
+      // Tạo booking với payment integration
       final bookingData = await ApiService.createBookingFromCart(
         customerName: _nameController.text.trim(),
         customerPhone: _phoneController.text.trim(),
@@ -79,6 +80,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         notes: _notesController.text.trim().isEmpty
             ? null
             : _notesController.text.trim(),
+        createPayment: true,
+        paymentAmount: widget.depositAmount > 0 
+            ? widget.depositAmount 
+            : widget.totalAmount,
+        paymentDescription: 
+            'Thanh toán đặt cọc cho đơn hàng từ giỏ hàng',
       );
 
       if (!mounted) return;

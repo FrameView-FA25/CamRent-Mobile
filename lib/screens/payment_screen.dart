@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'booking_list_screen.dart';
 
 class PaymentScreen extends StatefulWidget {
@@ -43,6 +44,42 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return widget.bookingData['id']?.toString() ??
         widget.bookingData['bookingId']?.toString() ??
         widget.bookingData['_id']?.toString();
+  }
+
+  String? _getPaymentId() {
+    return widget.bookingData['paymentId']?.toString();
+  }
+
+  String? _getPaymentUrl() {
+    return widget.bookingData['paymentUrl']?.toString() ??
+        widget.bookingData['vnpayUrl']?.toString() ??
+        widget.bookingData['url']?.toString();
+  }
+
+  Future<void> _openPaymentUrl() async {
+    final paymentUrl = _getPaymentUrl();
+    if (paymentUrl == null || paymentUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không có URL thanh toán'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final uri = Uri.parse(paymentUrl);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Không thể mở URL thanh toán: $paymentUrl'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   String? _getCustomerName() {
@@ -240,6 +277,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               ),
                               const Divider(),
                             ],
+                            if (_getPaymentId() != null) ...[
+                              _buildInfoRow(
+                                'Mã thanh toán',
+                                _getPaymentId()!,
+                                Icons.payment,
+                              ),
+                              const Divider(),
+                            ],
                             const SizedBox(height: 8),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -288,6 +333,32 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
+                      // Nút thanh toán (nếu có payment URL)
+                      if (_getPaymentUrl() != null && _getPaymentUrl()!.isNotEmpty) ...[
+                        ElevatedButton.icon(
+                          onPressed: _openPaymentUrl,
+                          icon: const Icon(Icons.payment),
+                          label: const Text(
+                            'Thanh toán ngay qua VNPay',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 16,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
                       // Thông báo
                       Container(
                         padding: const EdgeInsets.all(16),
