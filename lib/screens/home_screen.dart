@@ -6,6 +6,8 @@ import '../services/api_service.dart';
 import '../widgets/camera_card.dart';
 import 'camera_detail_screen.dart';
 import 'accessory_detail_screen.dart';
+import 'booking_screen.dart';
+import 'booking_list_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -32,15 +34,33 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       // Load cả cameras và accessories song song
-      final results = await Future.wait([
-        ApiService.getCameras().catchError((e) => <dynamic>[]),
-        ApiService.getAccessories().catchError((e) => <dynamic>[]),
-      ]);
+      List<dynamic> camerasData = [];
+      List<dynamic> accessoriesData = [];
+      String? errorMessage;
 
-      final camerasData = results[0];
-      final accessoriesData = results[1];
+      try {
+        camerasData = await ApiService.getCameras();
+        debugPrint('Loaded ${camerasData.length} cameras');
+      } catch (e) {
+        debugPrint('Error loading cameras: $e');
+        errorMessage = 'Không thể tải danh sách máy ảnh: ${e.toString().replaceFirst('Exception: ', '')}';
+      }
+
+      try {
+        accessoriesData = await ApiService.getAccessories();
+        debugPrint('Loaded ${accessoriesData.length} accessories');
+      } catch (e) {
+        debugPrint('Error loading accessories: $e');
+        if (errorMessage != null) {
+          errorMessage += '\nKhông thể tải danh sách phụ kiện: ${e.toString().replaceFirst('Exception: ', '')}';
+        } else {
+          errorMessage = 'Không thể tải danh sách phụ kiện: ${e.toString().replaceFirst('Exception: ', '')}';
+        }
+      }
 
       final products = <ProductItem>[];
+      int cameraParseErrors = 0;
+      int accessoryParseErrors = 0;
 
       // Thêm cameras
       for (final json in camerasData) {
@@ -48,9 +68,13 @@ class _HomeScreenState extends State<HomeScreen> {
           if (json is Map<String, dynamic>) {
             final camera = CameraModel.fromJson(json);
             products.add(ProductItem.camera(camera));
+          } else {
+            debugPrint('Warning: Camera item is not a Map: $json');
+            cameraParseErrors++;
           }
         } catch (e) {
-          // Bỏ qua item không parse được
+          debugPrint('Error parsing camera: $e\nJSON: $json');
+          cameraParseErrors++;
         }
       }
 
@@ -60,11 +84,18 @@ class _HomeScreenState extends State<HomeScreen> {
           if (json is Map<String, dynamic>) {
             final accessory = AccessoryModel.fromJson(json);
             products.add(ProductItem.accessory(accessory));
+          } else {
+            debugPrint('Warning: Accessory item is not a Map: $json');
+            accessoryParseErrors++;
           }
         } catch (e) {
-          // Bỏ qua item không parse được
+          debugPrint('Error parsing accessory: $e\nJSON: $json');
+          accessoryParseErrors++;
         }
       }
+
+      debugPrint('Total products loaded: ${products.length} (${camerasData.length} cameras, ${accessoriesData.length} accessories)');
+      debugPrint('Parse errors: $cameraParseErrors cameras, $accessoryParseErrors accessories');
 
       if (mounted) {
         setState(() {
@@ -72,8 +103,37 @@ class _HomeScreenState extends State<HomeScreen> {
           _isLoading = false;
         });
         _filterProducts(); // Apply current filter
+
+        // Show error message if there were API errors but we got some products
+        if (errorMessage != null && products.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(errorMessage),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        } else if (errorMessage != null && products.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Đã tải một phần danh sách sản phẩm. $errorMessage'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        } else if (products.isEmpty && camerasData.isEmpty && accessoriesData.isEmpty) {
+          // No products and no errors - might be empty database
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Hiện tại chưa có sản phẩm nào trong hệ thống.'),
+              backgroundColor: Colors.blue,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
       }
     } catch (e) {
+      debugPrint('Unexpected error in _loadProducts: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -89,9 +149,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Không thể tải danh sách sản phẩm. Đang sử dụng dữ liệu mẫu.',
+              'Không thể tải danh sách sản phẩm: ${e.toString().replaceFirst('Exception: ', '')}\nĐang sử dụng dữ liệu mẫu.',
             ),
             backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -180,17 +241,39 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _handleAddToCart(ProductItem product) async {
     try {
       if (product.type == ProductType.camera) {
-        await ApiService.addCameraToCart(cameraId: product.id);
+        final added = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (context) => BookingScreen(camera: product.camera!),
+          ),
+        );
+
+        if (added == true && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Đã thêm "${product.name}" vào giỏ hàng'),
+              action: SnackBarAction(
+                label: 'Xem giỏ',
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const BookingListScreen(),
+                    ),
+                  );
+                },
+              ),
+            ),
+          );
+        }
       } else {
         await ApiService.addAccessoryToCart(accessoryId: product.id);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Đã thêm "${product.name}" vào giỏ hàng'),
+          ),
+        );
       }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Đã thêm "${product.name}" vào giỏ hàng'),
-        ),
-      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -582,9 +665,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             );
                           }
                         },
-                        onAddToCart: product.isAvailable
-                            ? () => _handleAddToCart(product)
-                            : null,
+                        onAddToCart: () => _handleAddToCart(product),
                       ),
                     );
                   }, childCount: _filteredProducts.length),

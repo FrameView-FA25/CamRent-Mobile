@@ -4,6 +4,7 @@ import '../models/booking_cart_item.dart';
 import '../models/booking_model.dart';
 import '../models/camera_model.dart';
 import '../services/api_service.dart';
+import 'booking_detail_screen.dart';
 import 'camera_detail_screen.dart';
 import 'checkout_screen.dart';
 
@@ -60,6 +61,20 @@ class _BookingListScreenState extends State<BookingListScreen>
       final items = _extractItems(data);
       final totals = _extractTotals(data, items);
 
+      // Debug: Log extracted values
+      debugPrint('Cart loaded: ${items.length} items');
+      debugPrint('Total from response: ${totals.$1}, Deposit: ${totals.$2}');
+      for (var i = 0; i < items.length; i++) {
+        final item = items[i];
+        debugPrint(
+          'Item $i: ${item.cameraName}, '
+          'pricePerDay: ${item.pricePerDay}, '
+          'totalPrice: ${item.totalPrice}, '
+          'quantity: ${item.quantity}, '
+          'days: ${item.rentalDays}',
+        );
+      }
+
       if (!mounted) return;
       setState(() {
         _cartItems = items;
@@ -83,19 +98,64 @@ class _BookingListScreenState extends State<BookingListScreen>
     });
 
     try {
+      debugPrint('_loadHistory: Starting to load booking history...');
       final data = await ApiService.getBookings();
-      final bookings =
-          data
-              .whereType<Map<String, dynamic>>()
-              .map(BookingModel.fromJson)
-              .toList();
+      debugPrint('_loadHistory: Received ${data.length} items from API');
+      debugPrint('_loadHistory: Data type: ${data.runtimeType}');
+      
+      if (data.isEmpty) {
+        debugPrint('_loadHistory: No bookings returned from API');
+        if (!mounted) return;
+        setState(() {
+          _historyItems = [];
+          _isHistoryLoading = false;
+          _historyError = null;
+        });
+        return;
+      }
+      
+      final bookings = <BookingModel>[];
+      for (int i = 0; i < data.length; i++) {
+        final item = data[i];
+        debugPrint('_loadHistory: Processing item $i - type: ${item.runtimeType}');
+        
+        if (item is Map<String, dynamic>) {
+          debugPrint('_loadHistory: Item $i keys: ${item.keys.toList()}');
+          try {
+            final booking = BookingModel.fromJson(item);
+            debugPrint('_loadHistory: Parsed booking $i - id: ${booking.id}, status: ${booking.status}, statusText: ${booking.statusText}');
+            debugPrint('_loadHistory: Booking $i - pickupAt: ${booking.pickupAt}, returnAt: ${booking.returnAt}');
+            debugPrint('_loadHistory: Booking $i - totalPrice: ${booking.totalPrice}, items: ${booking.items.length}');
+            debugPrint('_loadHistory: Booking $i - cameraName: ${booking.cameraName}');
+            bookings.add(booking);
+          } catch (e, stackTrace) {
+            debugPrint('_loadHistory: Error parsing booking $i: $e');
+            debugPrint('_loadHistory: StackTrace: $stackTrace');
+            debugPrint('_loadHistory: Item data: $item');
+            // Continue parsing other items even if one fails
+          }
+        } else {
+          debugPrint('_loadHistory: Item $i is not a Map: ${item.runtimeType}, value: $item');
+        }
+      }
 
-      if (!mounted) return;
+      debugPrint('_loadHistory: Successfully parsed ${bookings.length} out of ${data.length} bookings');
+
+      if (!mounted) {
+        debugPrint('_loadHistory: Widget not mounted, skipping setState');
+        return;
+      }
+      
       setState(() {
         _historyItems = bookings;
         _isHistoryLoading = false;
+        _historyError = null;
       });
-    } catch (e) {
+      
+      debugPrint('_loadHistory: Updated UI with ${_historyItems.length} bookings');
+    } catch (e, stackTrace) {
+      debugPrint('_loadHistory: Exception: $e');
+      debugPrint('_loadHistory: StackTrace: $stackTrace');
       if (!mounted) return;
       setState(() {
         _historyError = e.toString().replaceFirst('Exception: ', '');
@@ -129,40 +189,100 @@ class _BookingListScreenState extends State<BookingListScreen>
     Map<String, dynamic> data,
     List<BookingCartItem> items,
   ) {
-    double getFromKeys(List<String> keys) {
-      for (final key in keys) {
-        final value = data[key];
-        if (value == null && data['data'] is Map<String, dynamic>) {
-          final nested = (data['data'] as Map<String, dynamic>)[key];
-          if (nested != null) {
-            return _toDouble(nested);
+    // Helper function to search for a value across multiple locations and key variations
+    double searchValue({
+      required List<String> keyVariations,
+      Map<String, dynamic>? source,
+    }) {
+      final searchData = source ?? data;
+      final allLocations = <Map<String, dynamic>>[
+        searchData,
+        if (searchData['data'] is Map<String, dynamic>)
+          searchData['data'] as Map<String, dynamic>,
+        if (searchData['summary'] is Map<String, dynamic>)
+          searchData['summary'] as Map<String, dynamic>,
+        if (searchData['cart'] is Map<String, dynamic>)
+          searchData['cart'] as Map<String, dynamic>,
+        if (searchData['result'] is Map<String, dynamic>)
+          searchData['result'] as Map<String, dynamic>,
+      ];
+
+      for (final location in allLocations) {
+        
+        for (final key in keyVariations) {
+          final value = location[key];
+          if (value != null) {
+            final doubleValue = _toDouble(value);
+            if (doubleValue > 0) {
+              return doubleValue;
+            }
           }
         }
-        if (value != null) {
-          return _toDouble(value);
-        }
       }
+
       return 0;
     }
 
-    final summary = data['summary'] as Map<String, dynamic>? ?? {};
+    // Search for total amount with multiple key variations
+    final totalKeyVariations = const [
+      'totalAmount',
+      'total_amount',
+      'totalPrice',
+      'total_price',
+      'total',
+      'grandTotal',
+      'grand_total',
+      'sum',
+      'amount',
+    ];
 
-    final total = getFromKeys(const ['totalAmount', 'totalPrice', 'total']);
-    final totalFromSummary = _toDouble(summary['totalAmount']);
-    final combinedTotal =
-        totalFromSummary > 0 ? totalFromSummary : (total > 0 ? total : null);
-    final calculatedTotal =
-        combinedTotal ??
-        items.fold<double>(0.0, (sum, item) => sum + item.totalPrice);
+    final totalFromResponse = searchValue(keyVariations: totalKeyVariations);
+    
+    // Search for deposit amount with multiple key variations
+    final depositKeyVariations = const [
+      'depositAmount',
+      'deposit_amount',
+      'totalDeposit',
+      'total_deposit',
+      'deposit',
+      'downPayment',
+      'down_payment',
+    ];
 
-    final deposit = getFromKeys(const ['depositAmount', 'totalDeposit']);
-    final depositFromSummary = _toDouble(summary['depositAmount']);
-    final combinedDeposit =
-        depositFromSummary > 0
-            ? depositFromSummary
-            : (deposit > 0 ? deposit : 0.0);
+    final depositFromResponse = searchValue(keyVariations: depositKeyVariations);
 
-    return (calculatedTotal, combinedDeposit);
+    // Calculate total from items if not found in response
+    // This is a fallback that should always work if items have valid totalPrice
+    var calculatedTotalFromItems = items.fold<double>(
+      0.0,
+      (sum, item) {
+        final itemTotal = item.totalPrice;
+        // If item.totalPrice is 0 but we have pricePerDay and dates, calculate it
+        if (itemTotal == 0 && item.pricePerDay > 0) {
+          if (item.startDate != null && item.endDate != null) {
+            final days = item.endDate!.difference(item.startDate!).inDays + 1;
+            if (days > 0) {
+              return sum + (item.pricePerDay * days * item.quantity);
+            }
+          }
+          // Fallback: use pricePerDay * quantity if no dates
+          return sum + (item.pricePerDay * item.quantity);
+        }
+        return sum + itemTotal;
+      },
+    );
+
+    // Use response value if available, otherwise calculate from items
+    // Prefer calculated from items if it's more than 0 (even if response has a value)
+    // This ensures we always show correct totals
+    final finalTotal = calculatedTotalFromItems > 0
+        ? calculatedTotalFromItems
+        : (totalFromResponse > 0 ? totalFromResponse : 0.0);
+
+    // For deposit, prefer response value, default to 0 if not found
+    final finalDeposit = depositFromResponse > 0 ? depositFromResponse : 0.0;
+
+    return (finalTotal, finalDeposit);
   }
 
   Future<void> _handleRemove(BookingCartItem item) async {
@@ -192,22 +312,78 @@ class _BookingListScreenState extends State<BookingListScreen>
     }
 
     try {
-      final itemType = item.type ?? BookingItemType.camera;
+      final raw = item.raw;
+      
+      // Extract type from raw data or use default
+      BookingItemType itemType = item.type ?? BookingItemType.camera;
+      
+      // Try to determine type from raw data if not available
+      if (item.type == null) {
+        final typeValue = raw['type'] ?? 
+                         raw['itemType'] ?? 
+                         raw['bookingItemType'] ??
+                         raw['item_type'];
+        
+        if (typeValue != null) {
+          final parsedType = BookingItemType.fromValue(typeValue);
+          if (parsedType != null) {
+            itemType = parsedType;
+          }
+        }
+        
+        // Also check bookingItem nested object
+        if (item.type == null && raw['bookingItem'] is Map) {
+          final bookingItem = raw['bookingItem'] as Map<String, dynamic>;
+          final bookingItemType = bookingItem['type'] ?? 
+                                 bookingItem['itemType'] ??
+                                 bookingItem['bookingItemType'];
+          if (bookingItemType != null) {
+            final parsedType = BookingItemType.fromValue(bookingItemType);
+            if (parsedType != null) {
+              itemType = parsedType;
+            }
+          }
+        }
+      }
 
-      // Lấy ID từ nhiều nguồn - ưu tiên bookingItemId vì đó là ID thực sự của item trong cart
+      // Lấy ID từ nhiều nguồn - ưu tiên các ID có thể là cart item ID
       String? itemId = item.id;
-      if (itemId.isEmpty) {
-        // Thử lấy từ raw data
-        final raw = item.raw;
+      
+      debugPrint('_handleRemove: Initial item.id=${item.id}, item.type=${item.type}');
+      debugPrint('_handleRemove: Raw data keys: ${raw.keys.toList()}');
+      
+      // Nếu item.id rỗng hoặc không phải UUID, thử lấy từ raw data
+      if (itemId.isEmpty || !_isValidUUID(itemId)) {
+        debugPrint('_handleRemove: item.id is empty or not UUID, trying to extract from raw data...');
+        
+        // Thử các key có thể chứa cart item ID
         itemId =
             _asString(raw['id']) ??
             _asString(raw['bookingItemId']) ??
             _asString(raw['cartItemId']) ??
             _asString(raw['bookingCartItemId']) ??
-            _asString(raw['bookingItem']?['id']);
+            _asString(raw['bookingCartItem']?['id']) ??
+            _asString(raw['bookingItem']?['id']) ??
+            _asString(raw['itemId']);
+        
+        debugPrint('_handleRemove: Extracted itemId from raw data: $itemId');
+        
+        // Nếu vẫn không có, thử từ nested objects
+        if ((itemId == null || itemId.isEmpty || !_isValidUUID(itemId)) && raw['bookingItem'] is Map) {
+          final bookingItem = raw['bookingItem'] as Map<String, dynamic>;
+          debugPrint('_handleRemove: Checking bookingItem object, keys: ${bookingItem.keys.toList()}');
+          
+          itemId = _asString(bookingItem['id']) ??
+                   _asString(bookingItem['bookingItemId']) ??
+                   _asString(bookingItem['itemId']);
+          
+          debugPrint('_handleRemove: Extracted itemId from bookingItem: $itemId');
+        }
       }
 
+      // Validate UUID format
       if (itemId == null || itemId.isEmpty) {
+        debugPrint('_handleRemove: Cannot find item ID. Raw data: $raw');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Không tìm thấy ID của item để xóa'),
@@ -217,10 +393,20 @@ class _BookingListScreenState extends State<BookingListScreen>
         return;
       }
 
+      if (!_isValidUUID(itemId)) {
+        debugPrint('_handleRemove: Item ID is not a valid UUID: $itemId');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('ID không hợp lệ: $itemId'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
       // Debug: Log thông tin item để kiểm tra
-      print(
-        'Removing item: id=$itemId, type=${itemType.value}, name=${item.cameraName}',
-      );
+      debugPrint('_handleRemove: Final values - itemId=$itemId, type=${itemType.stringValue} (${itemType.value}), name=${item.cameraName}');
+      debugPrint('_handleRemove: Calling ApiService.removeFromCart with: {id: $itemId, type: ${itemType.stringValue}}');
 
       await ApiService.removeFromCart(itemId: itemId, type: itemType);
       if (!mounted) return;
@@ -357,6 +543,9 @@ class _BookingListScreenState extends State<BookingListScreen>
   String _formatRange(BookingCartItem item) {
     final start = _formatDate(item.startDate);
     final end = _formatDate(item.endDate);
+    if (item.startDate == null || item.endDate == null) {
+      return 'Chưa chọn ngày thuê';
+    }
     return '$start → $end';
   }
 
@@ -1038,9 +1227,19 @@ class _BookingListScreenState extends State<BookingListScreen>
               borderRadius: BorderRadius.circular(16),
             ),
             elevation: 2,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
+            child: InkWell(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => BookingDetailScreen(booking: booking),
+                  ),
+                );
+              },
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
@@ -1150,6 +1349,7 @@ class _BookingListScreenState extends State<BookingListScreen>
                   ),
                 ],
               ),
+              ),
             ),
           );
         },
@@ -1167,5 +1367,14 @@ class _BookingListScreenState extends State<BookingListScreen>
     if (value == null) return 0;
     if (value is num) return value.toDouble();
     return double.tryParse(value.toString()) ?? 0;
+  }
+
+  bool _isValidUUID(String? value) {
+    if (value == null || value.isEmpty) return false;
+    final uuidPattern = RegExp(
+      r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+      caseSensitive: false,
+    );
+    return uuidPattern.hasMatch(value);
   }
 }

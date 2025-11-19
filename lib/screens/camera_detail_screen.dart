@@ -15,6 +15,9 @@ class CameraDetailScreen extends StatelessWidget {
     final branchDisplay = camera.branchDisplayName;
     final addressDisplay = camera.branchAddressDisplay ?? branchDisplay;
     final estimatedValueText = camera.estimatedValueLabel;
+    // Always show owner and branch manager info, use "Đang cập nhật" if not available
+    final ownerDisplay = camera.ownerDisplayName;
+    final branchManagerDisplay = camera.branchManagerDisplayName;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -137,53 +140,6 @@ class CameraDetailScreen extends StatelessWidget {
                           ),
                         ),
                       ),
-                      // Status badge
-                      Positioned(
-                        top: 60,
-                        right: 16,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color:
-                                camera.isAvailable ? Colors.green : Colors.red,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: (camera.isAvailable
-                                        ? Colors.green
-                                        : Colors.red)
-                                    .withOpacity(0.5),
-                                blurRadius: 10,
-                                offset: const Offset(0, 5),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                camera.isAvailable
-                                    ? Icons.check_circle
-                                    : Icons.close,
-                                color: Colors.white,
-                                size: 16,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                camera.isAvailable ? 'Có sẵn' : 'Đã thuê',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -289,50 +245,6 @@ class CameraDetailScreen extends StatelessWidget {
                               ],
                             ),
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              color:
-                                  camera.isAvailable
-                                      ? Colors.green
-                                      : Colors.red,
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: (camera.isAvailable
-                                          ? Colors.green
-                                          : Colors.red)
-                                      .withOpacity(0.3),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 5),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  camera.isAvailable
-                                      ? Icons.check_circle
-                                      : Icons.close,
-                                  color: Colors.white,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  camera.isAvailable ? 'Có sẵn' : 'Đã thuê',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -351,6 +263,20 @@ class CameraDetailScreen extends StatelessWidget {
                       title: 'Chi nhánh',
                       value: branchDisplay,
                       subtitle: addressDisplay,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildInfoTile(
+                      context,
+                      icon: Icons.person,
+                      title: 'Chủ sở hữu',
+                      value: ownerDisplay,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildInfoTile(
+                      context,
+                      icon: Icons.manage_accounts,
+                      title: 'Quản lý chi nhánh',
+                      value: branchManagerDisplay,
                     ),
                     const SizedBox(height: 12),
                     _buildInfoTile(
@@ -425,38 +351,34 @@ class CameraDetailScreen extends StatelessWidget {
           child: SizedBox(
             height: 50,
             child: ElevatedButton(
-              onPressed:
-                  camera.isAvailable
-                      ? () async {
-                        final added = await Navigator.push<bool>(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => BookingScreen(camera: camera),
-                          ),
-                        );
-                        if (added == true && context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Đã thêm ${camera.name} vào giỏ hàng',
-                              ),
-                              action: SnackBarAction(
-                                label: 'Xem giỏ',
-                                onPressed: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder:
-                                          (context) =>
-                                              const BookingListScreen(),
-                                    ),
-                                  );
-                                },
-                              ),
+              onPressed: () async {
+                final added = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => BookingScreen(camera: camera),
+                  ),
+                );
+                if (added == true && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Đã thêm ${camera.name} vào giỏ hàng',
+                      ),
+                      action: SnackBarAction(
+                        label: 'Xem giỏ',
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder:
+                                  (context) => const BookingListScreen(),
                             ),
                           );
-                        }
-                      }
-                      : null,
+                        },
+                      ),
+                    ),
+                  );
+                }
+              },
               style: ElevatedButton.styleFrom(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -464,8 +386,8 @@ class CameraDetailScreen extends StatelessWidget {
                 backgroundColor: Theme.of(context).colorScheme.primary,
                 foregroundColor: Colors.white,
               ),
-              child: Text(
-                camera.isAvailable ? 'Đặt lịch thuê' : 'Không khả dụng',
+              child: const Text(
+                'Đặt lịch thuê',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,

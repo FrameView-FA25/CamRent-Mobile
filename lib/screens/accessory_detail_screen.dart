@@ -15,6 +15,9 @@ class AccessoryDetailScreen extends StatelessWidget {
     final branchDisplay = accessory.branchDisplayName;
     final addressDisplay = accessory.branchAddressDisplay ?? branchDisplay;
     final estimatedValueText = accessory.estimatedValueLabel;
+    // Always show owner and branch manager info, use "Đang cập nhật" if not available
+    final ownerDisplay = accessory.ownerDisplayName;
+    final branchManagerDisplay = accessory.branchManagerDisplayName;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -137,55 +140,6 @@ class AccessoryDetailScreen extends StatelessWidget {
                           ),
                         ),
                       ),
-                      // Status badge
-                      Positioned(
-                        top: 60,
-                        right: 16,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color:
-                                accessory.isAvailable
-                                    ? Colors.green
-                                    : Colors.red,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: (accessory.isAvailable
-                                        ? Colors.green
-                                        : Colors.red)
-                                    .withOpacity(0.5),
-                                blurRadius: 10,
-                                offset: const Offset(0, 5),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                accessory.isAvailable
-                                    ? Icons.check_circle
-                                    : Icons.close,
-                                color: Colors.white,
-                                size: 16,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                accessory.isAvailable ? 'Có sẵn' : 'Đã thuê',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -291,50 +245,6 @@ class AccessoryDetailScreen extends StatelessWidget {
                               ],
                             ),
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              color:
-                                  accessory.isAvailable
-                                      ? Colors.green
-                                      : Colors.red,
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: (accessory.isAvailable
-                                          ? Colors.green
-                                          : Colors.red)
-                                      .withOpacity(0.3),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 5),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  accessory.isAvailable
-                                      ? Icons.check_circle
-                                      : Icons.close,
-                                  color: Colors.white,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  accessory.isAvailable ? 'Có sẵn' : 'Đã thuê',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -353,6 +263,20 @@ class AccessoryDetailScreen extends StatelessWidget {
                       title: 'Chi nhánh',
                       value: branchDisplay,
                       subtitle: addressDisplay,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildInfoTile(
+                      context,
+                      icon: Icons.person,
+                      title: 'Chủ sở hữu',
+                      value: ownerDisplay,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildInfoTile(
+                      context,
+                      icon: Icons.manage_accounts,
+                      title: 'Quản lý chi nhánh',
+                      value: branchManagerDisplay,
                     ),
                     const SizedBox(height: 12),
                     _buildInfoTile(
@@ -427,48 +351,44 @@ class AccessoryDetailScreen extends StatelessWidget {
           child: SizedBox(
             height: 50,
             child: ElevatedButton(
-              onPressed:
-                  accessory.isAvailable
-                      ? () async {
-                        try {
-                          await ApiService.addAccessoryToCart(
-                            accessoryId: accessory.id,
-                          );
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Đã thêm ${accessory.name} vào giỏ hàng',
-                                ),
-                                action: SnackBarAction(
-                                  label: 'Xem giỏ',
-                                  onPressed: () {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder:
-                                            (context) =>
-                                                const BookingListScreen(),
-                                      ),
-                                    );
-                                  },
-                                ),
+              onPressed: () async {
+                try {
+                  await ApiService.addAccessoryToCart(
+                    accessoryId: accessory.id,
+                  );
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Đã thêm ${accessory.name} vào giỏ hàng',
+                        ),
+                        action: SnackBarAction(
+                          label: 'Xem giỏ',
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder:
+                                    (context) => const BookingListScreen(),
                               ),
                             );
-                          }
-                        } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  e.toString().replaceFirst('Exception: ', ''),
-                                ),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        }
-                      }
-                      : null,
+                          },
+                        ),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          e.toString().replaceFirst('Exception: ', ''),
+                        ),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
               style: ElevatedButton.styleFrom(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -476,8 +396,8 @@ class AccessoryDetailScreen extends StatelessWidget {
                 backgroundColor: Theme.of(context).colorScheme.primary,
                 foregroundColor: Colors.white,
               ),
-              child: Text(
-                accessory.isAvailable ? 'Thêm vào giỏ hàng' : 'Không khả dụng',
+              child: const Text(
+                'Thêm vào giỏ hàng',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,

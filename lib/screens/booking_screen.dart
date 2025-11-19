@@ -12,34 +12,100 @@ class BookingScreen extends StatefulWidget {
 }
 
 class _BookingScreenState extends State<BookingScreen> {
-  final _formKey = GlobalKey<FormState>();
   DateTime? _startDate;
   DateTime? _endDate;
-  final _nameController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _addressController = TextEditingController();
   bool _isSubmitting = false;
+  List<Map<String, dynamic>> _existingBookings = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExistingBookings();
+  }
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _phoneController.dispose();
-    _emailController.dispose();
-    _addressController.dispose();
     super.dispose();
   }
 
+  Future<void> _loadExistingBookings() async {
+    try {
+      final bookings = await ApiService.getCameraBookings(widget.camera.id);
+      if (mounted) {
+        setState(() {
+          _existingBookings = bookings;
+        });
+      }
+    } catch (e) {
+      // Silently fail - we'll still validate on submit
+      debugPrint('Error loading existing bookings: $e');
+    }
+  }
+
+  // Check if dates overlap with existing bookings
+  bool _isDateRangeAvailable(DateTime start, DateTime end) {
+    final startDate = DateTime(start.year, start.month, start.day);
+    final endDate = DateTime(end.year, end.month, end.day);
+
+    for (final booking in _existingBookings) {
+      final pickupAt = booking['pickupAt'];
+      final returnAt = booking['returnAt'];
+      
+      if (pickupAt == null || returnAt == null) continue;
+
+      DateTime? bookingStart;
+      DateTime? bookingEnd;
+
+      if (pickupAt is String) {
+        bookingStart = DateTime.tryParse(pickupAt);
+      } else if (pickupAt is DateTime) {
+        bookingStart = pickupAt;
+      }
+
+      if (returnAt is String) {
+        bookingEnd = DateTime.tryParse(returnAt);
+      } else if (returnAt is DateTime) {
+        bookingEnd = returnAt;
+      }
+
+      if (bookingStart == null || bookingEnd == null) continue;
+
+      final bookingStartDate = DateTime(bookingStart.year, bookingStart.month, bookingStart.day);
+      final bookingEndDate = DateTime(bookingEnd.year, bookingEnd.month, bookingEnd.day);
+
+      // Check if dates overlap
+      // Overlap occurs if: start <= bookingEnd && end >= bookingStart
+      if (startDate.isBefore(bookingEndDate.add(const Duration(days: 1))) &&
+          endDate.isAfter(bookingStartDate.subtract(const Duration(days: 1)))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   Future<void> _selectStartDate() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
+      initialDate: today,
+      firstDate: today, // Không cho chọn quá khứ
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (picked != null) {
+      final pickedDate = DateTime(picked.year, picked.month, picked.day);
+      if (pickedDate.isBefore(today)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Không thể chọn ngày trong quá khứ'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
       setState(() {
-        _startDate = picked;
+        _startDate = pickedDate;
         if (_endDate != null && _endDate!.isBefore(_startDate!)) {
           _endDate = null;
         }
@@ -62,8 +128,18 @@ class _BookingScreenState extends State<BookingScreen> {
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (picked != null) {
+      final pickedDate = DateTime(picked.year, picked.month, picked.day);
+      if (pickedDate.isBefore(_startDate!)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Ngày kết thúc phải sau ngày bắt đầu'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
       setState(() {
-        _endDate = picked;
+        _endDate = pickedDate;
       });
     }
   }
@@ -75,56 +151,83 @@ class _BookingScreenState extends State<BookingScreen> {
   }
 
   Future<void> _submitBooking() async {
-    if (_formKey.currentState!.validate()) {
-      if (_startDate == null || _endDate == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Vui lòng chọn ngày bắt đầu và ngày kết thúc'),
-          ),
-        );
-        return;
-      }
+    if (_startDate == null || _endDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vui lòng chọn ngày bắt đầu và ngày kết thúc'),
+        ),
+      );
+      return;
+    }
 
-      // Show confirmation dialog
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder:
-            (context) => AlertDialog(
-              title: const Text('Thêm vào giỏ hàng'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Máy ảnh: ${widget.camera.name}'),
-                  const SizedBox(height: 8),
-                  Text('Ngày bắt đầu: ${_formatDate(_startDate!)}'),
-                  Text('Ngày kết thúc: ${_formatDate(_endDate!)}'),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Tổng tiền dự kiến: ${_formatPrice(_calculateTotal())}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
+    // Validate dates
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final startDate = DateTime(_startDate!.year, _startDate!.month, _startDate!.day);
+    final endDate = DateTime(_endDate!.year, _endDate!.month, _endDate!.day);
+
+    // Check if start date is in the past
+    if (startDate.isBefore(today)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không thể thuê trong quá khứ'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Check if dates overlap with existing bookings
+    if (!_isDateRangeAvailable(startDate, endDate)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Máy ảnh đã được thuê trong khoảng thời gian này. Vui lòng chọn thời gian khác.'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Thêm vào giỏ hàng'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Máy ảnh: ${widget.camera.name}'),
+                const SizedBox(height: 8),
+                Text('Ngày bắt đầu: ${_formatDate(_startDate!)}'),
+                Text('Ngày kết thúc: ${_formatDate(_endDate!)}'),
+                const SizedBox(height: 8),
+                Text(
+                  'Tổng tiền dự kiến: ${_formatPrice(_calculateTotal())}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
                   ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Hủy'),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Thêm'),
                 ),
               ],
             ),
-      );
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Hủy'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Thêm'),
+              ),
+            ],
+          ),
+    );
 
-      if (confirmed == true && mounted) {
-        await _addToCart();
-      }
+    if (confirmed == true && mounted) {
+      await _addToCart();
     }
   }
 
@@ -134,7 +237,11 @@ class _BookingScreenState extends State<BookingScreen> {
     });
 
     try {
-      await ApiService.addCameraToCart(cameraId: widget.camera.id);
+      await ApiService.addCameraToCart(
+        cameraId: widget.camera.id,
+        startDate: _startDate,
+        endDate: _endDate,
+      );
 
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -174,11 +281,9 @@ class _BookingScreenState extends State<BookingScreen> {
       appBar: AppBar(title: const Text('Đặt lịch thuê máy ảnh')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
               // Camera info card
               Card(
                 child: Padding(
@@ -232,6 +337,28 @@ class _BookingScreenState extends State<BookingScreen> {
                                 color: Theme.of(context).colorScheme.primary,
                               ),
                             ),
+                            if (widget.camera.ownerDisplayNameOrNull != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  'Chủ sở hữu: ${widget.camera.ownerDisplayNameOrNull}',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                              ),
+                            if (widget.camera.branchManagerDisplayNameOrNull != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  'Quản lý chi nhánh: ${widget.camera.branchManagerDisplayNameOrNull}',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       ),
@@ -292,100 +419,6 @@ class _BookingScreenState extends State<BookingScreen> {
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                'Thông tin liên hệ',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              // Name field
-              TextFormField(
-                controller: _nameController,
-                decoration: InputDecoration(
-                  labelText: 'Họ và tên',
-                  prefixIcon: const Icon(Icons.person),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  filled: true,
-                  fillColor: Colors.grey[50],
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Vui lòng nhập họ và tên';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              // Phone field
-              TextFormField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                decoration: InputDecoration(
-                  labelText: 'Số điện thoại',
-                  prefixIcon: const Icon(Icons.phone),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  filled: true,
-                  fillColor: Colors.grey[50],
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Vui lòng nhập số điện thoại';
-                  }
-                  if (value.length < 10) {
-                    return 'Số điện thoại không hợp lệ';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              // Email field
-              TextFormField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(
-                  labelText: 'Email',
-                  prefixIcon: const Icon(Icons.email),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  filled: true,
-                  fillColor: Colors.grey[50],
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Vui lòng nhập email';
-                  }
-                  if (!value.contains('@')) {
-                    return 'Email không hợp lệ';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              // Address field
-              TextFormField(
-                controller: _addressController,
-                decoration: InputDecoration(
-                  labelText: 'Địa chỉ',
-                  prefixIcon: const Icon(Icons.location_on),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  filled: true,
-                  fillColor: Colors.grey[50],
-                ),
-                maxLines: 2,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Vui lòng nhập địa chỉ';
-                  }
-                  return null;
-                },
               ),
               const SizedBox(height: 24),
               // Total summary
@@ -501,7 +534,6 @@ class _BookingScreenState extends State<BookingScreen> {
             ],
           ),
         ),
-      ),
-    );
+      );
   }
 }

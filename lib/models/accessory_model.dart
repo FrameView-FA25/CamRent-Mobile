@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class AccessoryModel {
   final String id;
   final String name;
@@ -11,6 +13,8 @@ class AccessoryModel {
   final bool isAvailable;
   final String branchName;
   final String branchAddress;
+  final String ownerName;
+  final String branchManagerName;
   final double platformFeePercent;
   final double estimatedValue;
   final double depositPercent;
@@ -32,6 +36,8 @@ class AccessoryModel {
     this.isAvailable = true,
     this.branchName = '',
     this.branchAddress = '',
+    this.ownerName = '',
+    this.branchManagerName = '',
     this.platformFeePercent = 0,
     this.estimatedValue = 0,
     this.depositPercent = 0,
@@ -45,6 +51,16 @@ class AccessoryModel {
 
   String? get branchAddressDisplay =>
       branchAddress.isNotEmpty ? branchAddress : null;
+
+  String get ownerDisplayName => ownerName.isNotEmpty ? ownerName : 'Đang cập nhật';
+
+  String? get ownerDisplayNameOrNull => ownerName.isNotEmpty ? ownerName : null;
+
+  String get branchManagerDisplayName =>
+      branchManagerName.isNotEmpty ? branchManagerName : 'Đang cập nhật';
+
+  String? get branchManagerDisplayNameOrNull =>
+      branchManagerName.isNotEmpty ? branchManagerName : null;
 
   String get shortPriceLabel {
     if (pricePerDay <= 0) {
@@ -131,6 +147,44 @@ class AccessoryModel {
     return parts.join(', ');
   }
 
+  static String _extractContactName(Map<String, dynamic>? user) {
+    if (user == null) return '';
+    
+    // Try multiple possible field names
+    final candidates = [
+      user['fullName'],
+      user['full_name'],
+      user['name'],
+      user['displayName'],
+      user['display_name'],
+      user['userName'],
+      user['user_name'],
+      user['firstName'],
+      user['first_name'],
+      user['lastName'],
+      user['last_name'],
+      user['email'],
+    ];
+    
+    for (final value in candidates) {
+      if (value == null) continue;
+      final text = value.toString().trim();
+      if (text.isNotEmpty && text != 'null' && text != 'string') {
+        return text;
+      }
+    }
+    
+    // If no name found, try to build from first + last name
+    final firstName = user['firstName']?.toString() ?? user['first_name']?.toString();
+    final lastName = user['lastName']?.toString() ?? user['last_name']?.toString();
+    if (firstName != null && firstName.trim().isNotEmpty && 
+        lastName != null && lastName.trim().isNotEmpty) {
+      return '${firstName.trim()} ${lastName.trim()}';
+    }
+    
+    return '';
+  }
+
   static String formatCurrency(double value) {
     if (value <= 0) return '0 VNĐ';
     if (value >= 1000000) {
@@ -153,10 +207,79 @@ class AccessoryModel {
     final variant = json['variant']?.toString();
     final branch = json['branch'] as Map<String, dynamic>?;
     final accessoryId = json['id']?.toString() ?? json['_id']?.toString();
-    final branchName = branch?['name']?.toString() ?? '';
-    final branchAddress = _buildBranchAddress(
+    String branchName = branch?['name']?.toString() ?? '';
+    String branchAddress = _buildBranchAddress(
       branch?['address'] as Map<String, dynamic>?,
     );
+    branchName = branchName.isNotEmpty
+        ? branchName
+        : (json['branchName']?.toString() ?? '');
+    branchAddress = branchAddress.isNotEmpty
+        ? branchAddress
+        : (json['branchAddress']?.toString() ?? '');
+    // Extract owner information - try multiple possible paths
+    Map<String, dynamic>? owner;
+    if (json['ownerUser'] != null) {
+      owner = json['ownerUser'] as Map<String, dynamic>?;
+      debugPrint('Accessory ${accessoryId}: Found ownerUser');
+    } else if (json['owner'] != null) {
+      owner = json['owner'] as Map<String, dynamic>?;
+      debugPrint('Accessory ${accessoryId}: Found owner');
+    } else if (json['ownerUserProfile'] != null) {
+      owner = json['ownerUserProfile'] as Map<String, dynamic>?;
+      debugPrint('Accessory ${accessoryId}: Found ownerUserProfile');
+    } else {
+      debugPrint('Accessory ${accessoryId}: No owner information found. Available keys: ${json.keys.where((k) => k.toString().toLowerCase().contains('owner')).toList()}');
+    }
+    
+    // Extract branch manager information
+    Map<String, dynamic>? branchManager;
+    if (branch != null) {
+      debugPrint('Accessory ${accessoryId}: Branch found. Branch keys: ${branch.keys.toList()}');
+      if (branch['manager'] != null) {
+        branchManager = branch['manager'] as Map<String, dynamic>?;
+        debugPrint('Accessory ${accessoryId}: Found branch.manager');
+      } else if (branch['managerUser'] != null) {
+        branchManager = branch['managerUser'] as Map<String, dynamic>?;
+        debugPrint('Accessory ${accessoryId}: Found branch.managerUser');
+      } else if (branch['managerProfile'] != null) {
+        branchManager = branch['managerProfile'] as Map<String, dynamic>?;
+        debugPrint('Accessory ${accessoryId}: Found branch.managerProfile');
+      } else {
+        debugPrint('Accessory ${accessoryId}: No branch manager found in branch object');
+      }
+    } else {
+      debugPrint('Accessory ${accessoryId}: No branch object found');
+    }
+    
+    var ownerName = _extractContactName(owner);
+    var branchManagerName = _extractContactName(branchManager);
+
+    if (ownerName.isEmpty) {
+      final fallbackOwner = json['ownerName']?.toString().trim();
+      if (fallbackOwner != null &&
+          fallbackOwner.isNotEmpty &&
+          fallbackOwner.toLowerCase() != 'string') {
+        ownerName = fallbackOwner;
+      }
+    }
+    if (branchManagerName.isEmpty) {
+      final fallbackManager = json['branchManagerName']?.toString().trim();
+      if (fallbackManager != null &&
+          fallbackManager.isNotEmpty &&
+          fallbackManager.toLowerCase() != 'string') {
+        branchManagerName = fallbackManager;
+      }
+    }
+    
+    // Debug logging
+    debugPrint('Accessory ${accessoryId}: ownerName="$ownerName", branchManagerName="$branchManagerName"');
+    if (ownerName.isEmpty && owner != null) {
+      debugPrint('Accessory ${accessoryId}: ownerUser found but name extraction failed. Keys: ${owner.keys.toList()}');
+    }
+    if (branchManagerName.isEmpty && branchManager != null) {
+      debugPrint('Accessory ${accessoryId}: branch manager found but name extraction failed. Keys: ${branchManager.keys.toList()}');
+    }
     final estimatedValue = _toDouble(json['estimatedValueVnd']);
     final depositCapMin = json['depositCapMinVnd'] != null
         ? _toDouble(json['depositCapMinVnd'])
@@ -206,6 +329,8 @@ class AccessoryModel {
       isAvailable: json['isAvailable'] ?? json['is_available'] ?? true,
       branchName: branchName,
       branchAddress: branchAddress,
+      ownerName: ownerName,
+      branchManagerName: branchManagerName,
       platformFeePercent: platformFeePercent,
       estimatedValue: estimatedValue,
       depositPercent: depositPercent,

@@ -126,41 +126,74 @@ class BookingCartItem {
           json['return_date'],
     );
 
-    final pricePerDay = _toDouble(
+    // Extract pricePerDay from multiple locations with more variations
+    var pricePerDay = _toDouble(
       json['pricePerDay'] ??
           json['price_per_day'] ??
           json['dailyRate'] ??
           json['daily_rate'] ??
           json['rate'] ??
+          json['unitPrice'] ??
+          json['unit_price'] ??
+          json['price'] ??
           camera['pricePerDay'] ??
           camera['price_per_day'] ??
           camera['baseDailyRate'] ??
           camera['base_daily_rate'] ??
+          camera['dailyRate'] ??
+          camera['daily_rate'] ??
+          camera['price'] ??
           bookingItem['pricePerDay'] ??
-          bookingItem['baseDailyRate'],
+          bookingItem['baseDailyRate'] ??
+          bookingItem['dailyRate'] ??
+          bookingItem['unitPrice'] ??
+          bookingItem['price'],
     );
 
     final quantity = _toInt(
       json['quantity'] ?? json['qty'] ?? bookingItem['quantity'] ?? 1,
     );
 
+    // Extract totalPrice from multiple locations
     var totalPrice = _toDouble(
       json['totalPrice'] ??
           json['total_price'] ??
           json['total'] ??
           json['totalAmount'] ??
           json['total_amount'] ??
+          json['amount'] ??
           bookingItem['totalPrice'] ??
-          bookingItem['total_price'],
+          bookingItem['total_price'] ??
+          bookingItem['amount'] ??
+          bookingItem['total'],
     );
 
-    // Tính toán totalPrice nếu không có từ backend
-    if (totalPrice == 0 &&
-        pricePerDay > 0 &&
-        startDate != null &&
-        endDate != null) {
+    // Calculate totalPrice if not provided or if it's 0
+    // Try multiple scenarios:
+    // 1. If we have pricePerDay and dates, calculate from those
+    if (totalPrice == 0 && pricePerDay > 0 && startDate != null && endDate != null) {
       final days = endDate.difference(startDate).inDays + 1;
-      totalPrice = pricePerDay * days * quantity;
+      if (days > 0) {
+        totalPrice = pricePerDay * days * quantity;
+      }
+    }
+    
+    // 2. If we have pricePerDay but no dates, use pricePerDay as total (fallback)
+    if (totalPrice == 0 && pricePerDay > 0) {
+      totalPrice = pricePerDay * quantity;
+    }
+    
+    // 3. If we have totalPrice but no pricePerDay, try to reverse calculate
+    if (pricePerDay == 0 && totalPrice > 0 && startDate != null && endDate != null) {
+      final days = endDate.difference(startDate).inDays + 1;
+      if (days > 0) {
+        pricePerDay = totalPrice / (days * quantity);
+      }
+    }
+    
+    // 4. If still no pricePerDay but have totalPrice, use totalPrice / quantity
+    if (pricePerDay == 0 && totalPrice > 0) {
+      pricePerDay = totalPrice / quantity;
     }
 
     final typeValue =

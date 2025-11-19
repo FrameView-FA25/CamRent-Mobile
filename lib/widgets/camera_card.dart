@@ -28,14 +28,18 @@ class CameraCard extends StatelessWidget {
       _isAccessory ? accessory!.pricePerDay : camera!.pricePerDay;
   String get _description =>
       _isAccessory ? accessory!.description : camera!.description;
-  bool get _isAvailable =>
-      _isAccessory ? accessory!.isAvailable : camera!.isAvailable;
   String get _branchName =>
       _isAccessory ? accessory!.branchDisplayName : camera!.branchDisplayName;
   String? get _branchAddress =>
       _isAccessory
           ? accessory!.branchAddressDisplay
           : camera!.branchAddressDisplay;
+  String? get _ownerName => _isAccessory
+      ? accessory!.ownerDisplayNameOrNull
+      : camera!.ownerDisplayNameOrNull;
+  String? get _branchManagerName => _isAccessory
+      ? accessory!.branchManagerDisplayNameOrNull
+      : camera!.branchManagerDisplayNameOrNull;
   String get _depositText =>
       _isAccessory ? accessory!.depositDetailLabel : camera!.depositDetailLabel;
   double get _estimatedValue =>
@@ -158,86 +162,6 @@ class CameraCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // Status badge
-                  if (!_isAvailable)
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.red.withOpacity(0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.close, color: Colors.white, size: 14),
-                            SizedBox(width: 4),
-                            Text(
-                              'Đã thuê',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  // Available badge
-                  if (_isAvailable)
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.green,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.green.withOpacity(0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.check_circle,
-                              color: Colors.white,
-                              size: 14,
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              'Có sẵn',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                   // Price badge ở góc dưới
                   Positioned(
                     bottom: 12,
@@ -291,7 +215,7 @@ class CameraCard extends StatelessWidget {
                     ),
                   ),
                   // Add to cart button (plus icon)
-                  if (_isAvailable && onAddToCart != null)
+                  if (onAddToCart != null)
                     Positioned(
                       bottom: 16,
                       right: 16,
@@ -396,6 +320,24 @@ class CameraCard extends StatelessWidget {
                     subtitle: addressDisplay,
                   ),
                   const SizedBox(height: 8),
+                  if (_ownerName != null) ...[
+                    _buildInfoRow(
+                      context,
+                      icon: Icons.person,
+                      label: 'Chủ sở hữu',
+                      value: _ownerName!,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (_branchManagerName != null) ...[
+                    _buildInfoRow(
+                      context,
+                      icon: Icons.manage_accounts,
+                      label: 'Quản lý chi nhánh',
+                      value: _branchManagerName!,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   _buildInfoRow(
                     context,
                     icon: Icons.account_balance_wallet,

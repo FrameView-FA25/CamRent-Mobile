@@ -27,6 +27,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final _addressController = TextEditingController();
   final _notesController = TextEditingController();
   bool _isSubmitting = false;
+  bool _isLoadingProfile = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
 
   @override
   void dispose() {
@@ -57,6 +64,43 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return '${date.day.toString().padLeft(2, '0')}/'
         '${date.month.toString().padLeft(2, '0')}/'
         '${date.year}';
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final profileData = await ApiService.getProfile();
+      if (!mounted) return;
+      
+      setState(() {
+        // Điền thông tin từ profile
+        _nameController.text = profileData['fullName'] ?? '';
+        _emailController.text = profileData['email'] ?? '';
+        _phoneController.text = profileData['phone'] ?? '';
+        
+        // Xử lý địa chỉ (có thể là object hoặc string)
+        final address = profileData['address'];
+        if (address != null) {
+          if (address is String) {
+            _addressController.text = address;
+          } else if (address is Map<String, dynamic>) {
+            final parts = <String>[];
+            if (address['street'] != null) parts.add(address['street']);
+            if (address['ward'] != null) parts.add(address['ward']);
+            if (address['district'] != null) parts.add(address['district']);
+            if (address['city'] != null) parts.add(address['city']);
+            _addressController.text = parts.join(', ');
+          }
+        }
+        
+        _isLoadingProfile = false;
+      });
+    } catch (e) {
+      // Nếu không load được profile, vẫn cho phép nhập thủ công
+      if (!mounted) return;
+      setState(() {
+        _isLoadingProfile = false;
+      });
+    }
   }
 
   Future<void> _handleCheckout() async {
@@ -169,15 +213,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ),
               // Form và danh sách sản phẩm
               Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Thông tin khách hàng
-                        Container(
+                child: _isLoadingProfile
+                    ? const Center(child: CircularProgressIndicator())
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Thông tin khách hàng
+                              Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: Colors.white,
