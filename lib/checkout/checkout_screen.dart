@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/booking_cart_item.dart';
 import '../services/api_service.dart';
-import 'payment_screen.dart';
+import '../screens/payment/payment_screen.dart';              
 
 class CheckoutScreen extends StatefulWidget {
   final List<BookingCartItem> cartItems;

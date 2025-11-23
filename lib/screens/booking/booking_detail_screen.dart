@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../models/booking_model.dart';
-import '../services/api_service.dart';
+import '../../models/booking_model.dart';
+import '../../services/api_service.dart';
 
 class BookingDetailScreen extends StatefulWidget {
   final BookingModel booking;

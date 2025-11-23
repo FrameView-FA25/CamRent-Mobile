@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../models/camera_model.dart';
-import '../services/api_service.dart';
+import '../../models/camera_model.dart';
+import '../../services/api_service.dart';
 
 class BookingScreen extends StatefulWidget {
   final CameraModel camera;

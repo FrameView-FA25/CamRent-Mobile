@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/api_service.dart';
-import 'login_screen.dart';
-import 'main_screen.dart';
+import '../screens/login/login_screen.dart';
+import '../main/main_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -45,7 +46,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
 
     try {
-      await ApiService.register(
+      final response = await ApiService.register(
         email: _emailController.text.trim(),
         password: _passwordController.text,
         fullName: _fullNameController.text.trim(),
@@ -60,12 +61,45 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _isLoading = false;
       });
 
+      // Kiểm tra xem response có chứa payment URL không
+      String? paymentUrl = response['paymentUrl']?.toString() ??
+          response['vnpayUrl']?.toString() ??
+          response['url']?.toString() ??
+          response['payment_url']?.toString();
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Đăng ký thành công!'),
           backgroundColor: Colors.green,
         ),
       );
+
+      // Nếu có payment URL, mở nó
+      if (paymentUrl != null && paymentUrl.isNotEmpty) {
+        try {
+          final uri = Uri.parse(paymentUrl);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          } else {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Không thể mở URL thanh toán: $paymentUrl'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+        } catch (e) {
+          debugPrint('Error opening payment URL: $e');
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Lỗi khi mở URL thanh toán: ${e.toString()}'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
 
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
