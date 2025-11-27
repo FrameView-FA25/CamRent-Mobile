@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../models/accessory_model.dart';
-import '../services/api_service.dart';
-import 'booking_list_screen.dart';
+import '../../models/accessory_model.dart';
+import '../../services/api_service.dart';
+import '../booking/booking_list_screen.dart';
 
 class AccessoryDetailScreen extends StatelessWidget {
   final AccessoryModel accessory;

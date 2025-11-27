@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import '../models/camera_model.dart';
 import '../models/accessory_model.dart';
-import '../models/combo_model.dart';
 
 class CameraCard extends StatelessWidget {
   final CameraModel? camera;
   final AccessoryModel? accessory;
-  final ComboModel? combo;
   final VoidCallback? onTap;
   final VoidCallback? onAddToCart;
 
@@ -14,99 +12,42 @@ class CameraCard extends StatelessWidget {
     super.key,
     this.camera,
     this.accessory,
-    this.combo,
     this.onTap,
     this.onAddToCart,
   }) : assert(
-          camera != null || accessory != null || combo != null,
-          'Either camera, accessory, or combo must be provided',
+          camera != null || accessory != null,
+          'Either camera or accessory must be provided',
         );
 
   bool get _isAccessory => accessory != null;
-  bool get _isCombo => combo != null;
-  String get _id {
-    if (_isCombo) return combo!.id;
-    if (_isAccessory) return accessory!.id;
-    return camera!.id;
-  }
-
-  String get _name {
-    if (_isCombo) return combo!.name;
-    if (_isAccessory) return accessory!.name;
-    return camera!.name;
-  }
-
-  String get _brand {
-    if (_isCombo) return combo!.brandLabel;
-    if (_isAccessory) return accessory!.brand;
-    return camera!.brand;
-  }
-
-  String get _imageUrl {
-    if (_isCombo) return combo!.imageUrl;
-    if (_isAccessory) return accessory!.imageUrl;
-    return camera!.imageUrl;
-  }
-
-  double get _pricePerDay {
-    if (_isCombo) return combo!.pricePerDay;
-    if (_isAccessory) return accessory!.pricePerDay;
-    return camera!.pricePerDay;
-  }
-
-  String get _description {
-    if (_isCombo) return combo!.displayDescription;
-    if (_isAccessory) return accessory!.description;
-    return camera!.description;
-  }
-
-  String get _branchName {
-    if (_isCombo) return combo!.branchDisplayName;
-    if (_isAccessory) return accessory!.branchDisplayName;
-    return camera!.branchDisplayName;
-  }
-
-  String? get _branchAddress {
-    if (_isCombo) return combo!.branchAddressDisplay;
-    if (_isAccessory) return accessory!.branchAddressDisplay;
-    return camera!.branchAddressDisplay;
-  }
-
-  String? get _ownerName {
-    if (_isCombo) return combo!.ownerDisplayName;
-    if (_isAccessory) return accessory!.ownerDisplayNameOrNull;
-    return camera!.ownerDisplayNameOrNull;
-  }
-
-  String? get _branchManagerName {
-    if (_isCombo) return combo!.branchManagerDisplayName;
-    if (_isAccessory) return accessory!.branchManagerDisplayNameOrNull;
-    return camera!.branchManagerDisplayNameOrNull;
-  }
-
-  String get _depositText {
-    if (_isCombo) return combo!.depositDetailLabel;
-    if (_isAccessory) return accessory!.depositDetailLabel;
-    return camera!.depositDetailLabel;
-  }
-
-  double get _estimatedValue {
-    if (_isCombo) return combo!.estimatedValue;
-    if (_isAccessory) return accessory!.estimatedValue;
-    return camera!.estimatedValue;
-  }
-
-  double get _platformFeePercent {
-    if (_isCombo) return combo!.platformFeePercent;
-    if (_isAccessory) return accessory!.platformFeePercent;
-    return camera!.platformFeePercent;
-  }
-
-  List<String> get _features {
-    if (_isCombo) return combo!.features;
-    if (_isAccessory) return accessory!.features;
-    return camera!.features;
-  }
+  String get _id => _isAccessory ? accessory!.id : camera!.id;
+  String get _name => _isAccessory ? accessory!.name : camera!.name;
+  String get _brand => _isAccessory ? accessory!.brand : camera!.brand;
+  String get _imageUrl => _isAccessory ? accessory!.imageUrl : camera!.imageUrl;
+  double get _pricePerDay =>
+      _isAccessory ? accessory!.pricePerDay : camera!.pricePerDay;
+  String get _description =>
+      _isAccessory ? accessory!.description : camera!.description;
+  String get _branchName =>
+      _isAccessory ? accessory!.branchDisplayName : camera!.branchDisplayName;
+  String? get _branchAddress =>
+      _isAccessory
+          ? accessory!.branchAddressDisplay
+          : camera!.branchAddressDisplay;
+  String? get _ownerName => _isAccessory
+      ? accessory!.ownerDisplayNameOrNull
+      : camera!.ownerDisplayNameOrNull;
+  String? get _branchManagerName => _isAccessory
+      ? accessory!.branchManagerDisplayNameOrNull
+      : camera!.branchManagerDisplayNameOrNull;
+  String get _depositText =>
+      _isAccessory ? accessory!.depositDetailLabel : camera!.depositDetailLabel;
+  double get _estimatedValue =>
+      _isAccessory ? accessory!.estimatedValue : camera!.estimatedValue;
+  double get _platformFeePercent =>
+      _isAccessory ? accessory!.platformFeePercent : camera!.platformFeePercent;
+  List<String> get _features =>
+      _isAccessory ? accessory!.features : camera!.features;
 
   @override
   Widget build(BuildContext context) {
@@ -124,13 +65,6 @@ class CameraCard extends StatelessWidget {
             ? '${_platformFeePercent.toStringAsFixed(0)}%'
             : null;
 
-    final priceLabel = _isCombo
-        ? combo!.shortPriceLabel
-        : _isAccessory
-            ? accessory!.shortPriceLabel
-            : camera!.shortPriceLabel;
-    final priceCycle = _pricePerDay > 0 ? '/ngày' : '';
-
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -142,7 +76,7 @@ class CameraCard extends StatelessWidget {
           children: [
             // Image với gradient overlay
             Hero(
-              tag: 'product_${_id}',
+              tag: '${_isAccessory ? 'accessory' : 'camera'}_$_id',
               child: Stack(
                 children: [
                   Container(
@@ -153,7 +87,9 @@ class CameraCard extends StatelessWidget {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Theme.of(context).colorScheme.primary.withOpacity(0.12),
+                          Theme.of(
+                            context,
+                          ).colorScheme.primary.withOpacity(0.12),
                           Colors.grey[300]!,
                         ],
                       ),
@@ -170,13 +106,13 @@ class CameraCard extends StatelessWidget {
                         loadingBuilder: (context, child, loadingProgress) {
                           if (loadingProgress == null) return child;
                           return Container(
-                            color: Colors.grey[200],
                             alignment: Alignment.center,
                             child: CircularProgressIndicator(
-                              value: loadingProgress.expectedTotalBytes != null
-                                  ? loadingProgress.cumulativeBytesLoaded /
-                                      loadingProgress.expectedTotalBytes!
-                                  : null,
+                              value:
+                                  loadingProgress.expectedTotalBytes != null
+                                      ? loadingProgress.cumulativeBytesLoaded /
+                                          loadingProgress.expectedTotalBytes!
+                                      : null,
                               color: Theme.of(context).colorScheme.primary,
                             ),
                           );
@@ -188,22 +124,22 @@ class CameraCard extends StatelessWidget {
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                                 colors: [
-                                  Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withOpacity(0.3),
-                                  Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withOpacity(0.1),
+                                  Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withOpacity(0.3),
+                                  Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withOpacity(0.1),
                                 ],
                               ),
                             ),
-                            child: const Center(
+                            child: Center(
                               child: Icon(
                                 Icons.camera_alt,
                                 size: 80,
-                                color: Colors.white,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(0.5),
                               ),
                             ),
                           );
@@ -226,7 +162,7 @@ class CameraCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // Price badge
+                  // Price badge ở góc dưới
                   Positioned(
                     bottom: 12,
                     left: 12,
@@ -257,16 +193,18 @@ class CameraCard extends StatelessWidget {
                             color: Theme.of(context).colorScheme.primary,
                           ),
                           Text(
-                            priceLabel,
+                            _isAccessory
+                                ? accessory!.shortPriceLabel
+                                : camera!.shortPriceLabel,
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                               color: Theme.of(context).colorScheme.primary,
                             ),
                           ),
-                          if (priceCycle.isNotEmpty)
+                          if (_pricePerDay > 0)
                             Text(
-                              priceCycle,
+                              '/ngày',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey[600],
@@ -276,7 +214,7 @@ class CameraCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // Add to cart button
+                  // Add to cart button (plus icon)
                   if (onAddToCart != null)
                     Positioned(
                       bottom: 16,

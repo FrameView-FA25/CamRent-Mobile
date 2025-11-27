@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'home_screen.dart';
-import 'booking_list_screen.dart';
-import 'profile_screen.dart';
+import '../screens/home/home_screen.dart';
+import '../screens/booking/booking_list_screen.dart';
+import '../profile/profile_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});

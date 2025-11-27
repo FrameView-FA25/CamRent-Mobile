@@ -1,13 +1,15 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
-import '../models/camera_model.dart';
-import '../models/accessory_model.dart';
-import '../models/product_item.dart';
-import '../services/api_service.dart';
-import '../widgets/camera_card.dart';
-import 'camera_detail_screen.dart';
-import 'accessory_detail_screen.dart';
-import 'booking_screen.dart';
-import 'booking_list_screen.dart';
+import '../../models/camera_model.dart';
+import '../../models/accessory_model.dart';
+import '../../models/product_item.dart';
+import '../../services/api_service.dart';
+import '../../widgets/camera_card.dart';
+import '../camera/camera_detail_screen.dart';
+import '../accessory/accessory_detail_screen.dart';
+import '../booking/booking_screen.dart';
+import '../booking/booking_list_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,7 +21,16 @@ class HomeScreen extends StatefulWidget {
 enum FilterType { all, camera, accessory }
 
 class _HomeScreenState extends State<HomeScreen> {
+  static const List<String> _defaultBannerImages = [
+    'https://images.unsplash.com/photo-1606983340126-99ab4feaa64a?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1489515217757-5fd1be406fef?auto=format&fit=crop&w=1200&q=80',
+  ];
+
   final TextEditingController _searchController = TextEditingController();
+  final Random _random = Random();
   List<ProductItem> _products = [];
   List<ProductItem> _filteredProducts = [];
   bool _isLoading = true;
@@ -97,12 +108,16 @@ class _HomeScreenState extends State<HomeScreen> {
       debugPrint('Total products loaded: ${products.length} (${camerasData.length} cameras, ${accessoriesData.length} accessories)');
       debugPrint('Parse errors: $cameraParseErrors cameras, $accessoryParseErrors accessories');
 
-      if (mounted) {
-        setState(() {
-          _products = products;
-          _isLoading = false;
-        });
-        _filterProducts(); // Apply current filter
+        if (mounted) {
+          setState(() {
+            _products = products;
+            _isLoading = false;
+            _currentBannerIndex = 0;
+          });
+          if (_bannerPageController.hasClients) {
+            _bannerPageController.jumpToPage(0);
+          }
+          _filterProducts(); // Apply current filter
 
         // Show error message if there were API errors but we got some products
         if (errorMessage != null && products.isEmpty) {
@@ -143,7 +158,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   .map((c) => ProductItem.camera(c))
                   .toList();
           _filteredProducts = _products;
+          _currentBannerIndex = 0;
         });
+        if (_bannerPageController.hasClients) {
+          _bannerPageController.jumpToPage(0);
+        }
         _filterProducts(); // Apply current filter
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -177,8 +196,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _startBannerAutoScroll() {
     Future.delayed(const Duration(seconds: 3), () {
-      if (!mounted || _bannerPageController.hasClients == false) return;
-      final nextIndex = (_currentBannerIndex + 1) % _getCameraImages().length;
+      if (!mounted) return;
+      final bannerImages = _bannerImages;
+      if (bannerImages.isEmpty || _bannerPageController.hasClients == false) {
+        _startBannerAutoScroll();
+        return;
+      }
+      final nextIndex = (_currentBannerIndex + 1) % bannerImages.length;
       _bannerPageController.animateToPage(
         nextIndex,
         duration: const Duration(milliseconds: 500),
@@ -188,21 +212,27 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  List<String> _getCameraImages() {
-    return [
-      'https://images.unsplash.com/photo-1606983340126-99ab4feaa64a?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1606983340126-99ab4feaa64a?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=1200&q=80',
-    ];
+  List<String> get _bannerImages {
+    final seenUrls = <String>{};
+    final images = <String>[];
+    for (final product in _products) {
+      final imageUrl = product.imageUrl.trim();
+      if (imageUrl.isEmpty) continue;
+      if (seenUrls.add(imageUrl)) {
+        images.add(imageUrl);
+      }
+    }
+    if (images.isEmpty) {
+      return _defaultBannerImages;
+    }
+    return images;
   }
 
   void _filterProducts() {
     final query = _searchController.text.toLowerCase();
     setState(() {
       // Lọc theo type trước
-      List<ProductItem> typeFiltered = _products;
+      List<ProductItem> typeFiltered = List.from(_products);
       if (_selectedFilter == FilterType.camera) {
         typeFiltered =
             _products.where((p) => p.type == ProductType.camera).toList();
@@ -212,22 +242,25 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       // Sau đó lọc theo search query
+      late List<ProductItem> filtered;
       if (query.isEmpty) {
-        _filteredProducts = typeFiltered;
+        filtered = typeFiltered;
       } else {
-        _filteredProducts =
-            typeFiltered.where((product) {
-              final nameMatch = product.name.toLowerCase().contains(query);
-              final brandMatch = product.brand.toLowerCase().contains(query);
-              final branchMatch = product.branchName.toLowerCase().contains(
-                query,
-              );
-              final descriptionMatch = product.description
-                  .toLowerCase()
-                  .contains(query);
-              return nameMatch || brandMatch || branchMatch || descriptionMatch;
-            }).toList();
+        filtered = typeFiltered.where((product) {
+          final nameMatch = product.name.toLowerCase().contains(query);
+          final brandMatch = product.brand.toLowerCase().contains(query);
+          final branchMatch = product.branchName.toLowerCase().contains(query);
+          final descriptionMatch =
+              product.description.toLowerCase().contains(query);
+          return nameMatch || brandMatch || branchMatch || descriptionMatch;
+        }).toList();
       }
+
+      if (_selectedFilter == FilterType.all && query.isEmpty) {
+        filtered.shuffle(_random);
+      }
+
+      _filteredProducts = filtered;
     });
   }
 
@@ -361,111 +394,121 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Container(
                 margin: const EdgeInsets.all(16),
                 height: 200,
-                child: Stack(
-                  children: [
-                    PageView.builder(
-                      controller: _bannerPageController,
-                      onPageChanged: (index) {
-                        setState(() {
-                          _currentBannerIndex = index;
-                        });
-                      },
-                      itemCount: _getCameraImages().length,
-                      itemBuilder: (context, index) {
-                        return Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
-                                blurRadius: 15,
-                                offset: const Offset(0, 8),
+                child: Builder(
+                  builder: (context) {
+                    final bannerImages = _bannerImages;
+                    if (bannerImages.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+                    return Stack(
+                      children: [
+                        PageView.builder(
+                          controller: _bannerPageController,
+                          onPageChanged: (index) {
+                            setState(() {
+                              _currentBannerIndex = index;
+                            });
+                          },
+                          itemCount: bannerImages.length,
+                          itemBuilder: (context, index) {
+                            final imageUrl = bannerImages[index];
+                            return Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 15,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: Image.network(
-                              _getCameraImages()[index],
-                              fit: BoxFit.cover,
-                              loadingBuilder: (
-                                context,
-                                child,
-                                loadingProgress,
-                              ) {
-                                if (loadingProgress == null) return child;
-                                return Container(
-                                  color: Colors.grey[200],
-                                  child: Center(
-                                    child: CircularProgressIndicator(
-                                      value:
-                                          loadingProgress.expectedTotalBytes !=
-                                                  null
-                                              ? loadingProgress
-                                                      .cumulativeBytesLoaded /
-                                                  loadingProgress
-                                                      .expectedTotalBytes!
-                                              : null,
-                                      color:
-                                          Theme.of(context).colorScheme.primary,
-                                    ),
-                                  ),
-                                );
-                              },
-                              errorBuilder: (context, error, stackTrace) {
-                                return Container(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                      colors: [
-                                        Theme.of(context).colorScheme.primary,
-                                        Theme.of(
-                                          context,
-                                        ).colorScheme.primary.withOpacity(0.7),
-                                      ],
-                                    ),
-                                  ),
-                                  child: const Center(
-                                    child: Icon(
-                                      Icons.camera_alt,
-                                      size: 64,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    // Page indicators
-                    Positioned(
-                      bottom: 12,
-                      left: 0,
-                      right: 0,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(
-                          _getCameraImages().length,
-                          (index) => Container(
-                            width: 8,
-                            height: 8,
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color:
-                                  _currentBannerIndex == index
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(20),
+                                child: Image.network(
+                                  imageUrl,
+                                  fit: BoxFit.cover,
+                                  loadingBuilder: (
+                                    context,
+                                    child,
+                                    loadingProgress,
+                                  ) {
+                                    if (loadingProgress == null) return child;
+                                    return Container(
+                                      color: Colors.grey[200],
+                                      child: Center(
+                                        child: CircularProgressIndicator(
+                                          value:
+                                              loadingProgress.expectedTotalBytes !=
+                                                      null
+                                                  ? loadingProgress
+                                                          .cumulativeBytesLoaded /
+                                                      loadingProgress
+                                                          .expectedTotalBytes!
+                                                  : null,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primary,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                          colors: [
+                                            Theme.of(context).colorScheme.primary,
+                                            Theme.of(
+                                              context,
+                                            ).colorScheme.primary.withOpacity(0.7),
+                                          ],
+                                        ),
+                                      ),
+                                      child: const Center(
+                                        child: Icon(
+                                          Icons.camera_alt,
+                                          size: 64,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        // Page indicators
+                        Positioned(
+                          bottom: 12,
+                          left: 0,
+                          right: 0,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(
+                              bannerImages.length,
+                              (index) => Container(
+                                width: 8,
+                                height: 8,
+                                margin:
+                                    const EdgeInsets.symmetric(horizontal: 4),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: _currentBannerIndex == index
                                       ? Colors.white
                                       : Colors.white.withOpacity(0.4),
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                  ],
+                      ],
+                    );
+                  },
                 ),
               ),
             ),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../models/camera_model.dart';
-import 'booking_screen.dart';
-import 'booking_list_screen.dart';
+import '../../models/camera_model.dart';
+import '../booking/booking_screen.dart';
+import '../booking/booking_list_screen.dart';
 
 class CameraDetailScreen extends StatelessWidget {
   final CameraModel camera;

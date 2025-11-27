@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
-import 'login_screen.dart';
-import 'booking_list_screen.dart';
+import '../screens/login/login_screen.dart';
+import '../screens/booking/booking_list_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
