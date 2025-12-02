@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../services/api_service.dart';
 import '../../main/main_screen.dart';
 import '../../profile/register_screen.dart';
+import '../staff/staff_main_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -43,10 +44,28 @@ class _LoginScreenState extends State<LoginScreen> {
             _isLoading = false;
           });
 
-          // Navigate to main screen on success
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const MainScreen()),
-          );
+          // Check user role and navigate to appropriate screen
+          final userRole = await ApiService.getUserRole();
+          debugPrint('LoginScreen: User role after login: $userRole');
+          
+          // Check if user is Staff (role name is "Staff")
+          final isStaff = userRole != null && userRole.toLowerCase() == 'staff';
+          debugPrint('LoginScreen: Is Staff: $isStaff');
+          debugPrint('LoginScreen: Will navigate to ${isStaff ? "StaffMainScreen" : "MainScreen"}');
+          
+          if (isStaff) {
+            // Staff role - navigate to StaffMainScreen
+            debugPrint('LoginScreen: Navigating to StaffMainScreen');
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (context) => const StaffMainScreen()),
+            );
+          } else {
+            // Renter or other roles - go to regular MainScreen
+            debugPrint('LoginScreen: Navigating to MainScreen (role: $userRole)');
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (context) => const MainScreen()),
+            );
+          }
         }
       } catch (e) {
         if (mounted) {
@@ -274,9 +293,6 @@ class _LoginScreenState extends State<LoginScreen> {
                             validator: (value) {
                               if (value == null || value.isEmpty) {
                                 return 'Vui lòng nhập mật khẩu';
-                              }
-                              if (value.length < 6) {
-                                return 'Mật khẩu phải có ít nhất 6 ký tự';
                               }
                               return null;
                             },

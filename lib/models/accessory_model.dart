@@ -221,35 +221,35 @@ class AccessoryModel {
     Map<String, dynamic>? owner;
     if (json['ownerUser'] != null) {
       owner = json['ownerUser'] as Map<String, dynamic>?;
-      debugPrint('Accessory ${accessoryId}: Found ownerUser');
+      debugPrint('Accessory $accessoryId: Found ownerUser');
     } else if (json['owner'] != null) {
       owner = json['owner'] as Map<String, dynamic>?;
-      debugPrint('Accessory ${accessoryId}: Found owner');
+      debugPrint('Accessory $accessoryId: Found owner');
     } else if (json['ownerUserProfile'] != null) {
       owner = json['ownerUserProfile'] as Map<String, dynamic>?;
-      debugPrint('Accessory ${accessoryId}: Found ownerUserProfile');
+      debugPrint('Accessory $accessoryId: Found ownerUserProfile');
     } else {
-      debugPrint('Accessory ${accessoryId}: No owner information found. Available keys: ${json.keys.where((k) => k.toString().toLowerCase().contains('owner')).toList()}');
+      debugPrint('Accessory $accessoryId: No owner information found. Available keys: ${json.keys.where((k) => k.toString().toLowerCase().contains('owner')).toList()}');
     }
     
     // Extract branch manager information
     Map<String, dynamic>? branchManager;
     if (branch != null) {
-      debugPrint('Accessory ${accessoryId}: Branch found. Branch keys: ${branch.keys.toList()}');
+      debugPrint('Accessory $accessoryId: Branch found. Branch keys: ${branch.keys.toList()}');
       if (branch['manager'] != null) {
         branchManager = branch['manager'] as Map<String, dynamic>?;
-        debugPrint('Accessory ${accessoryId}: Found branch.manager');
+        debugPrint('Accessory $accessoryId: Found branch.manager');
       } else if (branch['managerUser'] != null) {
         branchManager = branch['managerUser'] as Map<String, dynamic>?;
-        debugPrint('Accessory ${accessoryId}: Found branch.managerUser');
+        debugPrint('Accessory $accessoryId: Found branch.managerUser');
       } else if (branch['managerProfile'] != null) {
         branchManager = branch['managerProfile'] as Map<String, dynamic>?;
-        debugPrint('Accessory ${accessoryId}: Found branch.managerProfile');
+        debugPrint('Accessory $accessoryId: Found branch.managerProfile');
       } else {
-        debugPrint('Accessory ${accessoryId}: No branch manager found in branch object');
+        debugPrint('Accessory $accessoryId: No branch manager found in branch object');
       }
     } else {
-      debugPrint('Accessory ${accessoryId}: No branch object found');
+      debugPrint('Accessory $accessoryId: No branch object found');
     }
     
     var ownerName = _extractContactName(owner);
@@ -273,12 +273,12 @@ class AccessoryModel {
     }
     
     // Debug logging
-    debugPrint('Accessory ${accessoryId}: ownerName="$ownerName", branchManagerName="$branchManagerName"');
+    debugPrint('Accessory $accessoryId: ownerName="$ownerName", branchManagerName="$branchManagerName"');
     if (ownerName.isEmpty && owner != null) {
-      debugPrint('Accessory ${accessoryId}: ownerUser found but name extraction failed. Keys: ${owner.keys.toList()}');
+      debugPrint('Accessory $accessoryId: ownerUser found but name extraction failed. Keys: ${owner.keys.toList()}');
     }
     if (branchManagerName.isEmpty && branchManager != null) {
-      debugPrint('Accessory ${accessoryId}: branch manager found but name extraction failed. Keys: ${branchManager.keys.toList()}');
+      debugPrint('Accessory $accessoryId: branch manager found but name extraction failed. Keys: ${branchManager.keys.toList()}');
     }
     final estimatedValue = _toDouble(json['estimatedValueVnd']);
     final depositCapMin = json['depositCapMinVnd'] != null

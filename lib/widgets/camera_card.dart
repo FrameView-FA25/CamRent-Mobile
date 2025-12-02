@@ -113,16 +113,6 @@ class CameraCard extends StatelessWidget {
     final branchDisplay = _branchName;
     final addressDisplay = _branchAddress;
     final depositText = _depositText;
-    final estimatedValueText =
-        _estimatedValue > 0
-            ? (_isAccessory
-                ? AccessoryModel.formatCurrency(_estimatedValue)
-                : CameraModel.formatCurrency(_estimatedValue))
-            : null;
-    final platformFeeText =
-        _platformFeePercent > 0
-            ? '${_platformFeePercent.toStringAsFixed(0)}%'
-            : null;
 
     final priceLabel = _isCombo
         ? combo!.shortPriceLabel
@@ -131,406 +121,313 @@ class CameraCard extends StatelessWidget {
             : camera!.shortPriceLabel;
     final priceCycle = _pricePerDay > 0 ? '/ngày' : '';
 
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Image với gradient overlay
-            Hero(
-              tag: 'product_${_id}',
-              child: Stack(
-                children: [
-                  Container(
-                    height: 200,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Theme.of(context).colorScheme.primary.withOpacity(0.12),
-                          Colors.grey[300]!,
-                        ],
-                      ),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+            spreadRadius: 0,
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Product Image - Apple Store Style
+              Hero(
+                tag: 'product_$_id',
+                child: Container(
+                  height: 280,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(24),
+                      topRight: Radius.circular(24),
                     ),
-                    child: ColorFiltered(
-                      colorFilter: ColorFilter.mode(
-                        Colors.black.withOpacity(0.05),
-                        BlendMode.darken,
-                      ),
-                      child: Image.network(
-                        _imageUrl,
-                        fit: BoxFit.cover,
-                        colorBlendMode: BlendMode.darken,
-                        loadingBuilder: (context, child, loadingProgress) {
+                  ),
+                  child: Stack(
+                    children: [
+                      // Product Image
+                      ClipRRect(
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(24),
+                          topRight: Radius.circular(24),
+                        ),
+                        child: Image.network(
+                          _imageUrl,
+                          fit: BoxFit.contain,
+                          width: double.infinity,
+                          height: double.infinity,
+                          loadingBuilder: (context, child, loadingProgress) {
                           if (loadingProgress == null) return child;
                           return Container(
-                            color: Colors.grey[200],
+                            color: Colors.grey[50],
                             alignment: Alignment.center,
                             child: CircularProgressIndicator(
                               value: loadingProgress.expectedTotalBytes != null
                                   ? loadingProgress.cumulativeBytesLoaded /
                                       loadingProgress.expectedTotalBytes!
                                   : null,
-                              color: Theme.of(context).colorScheme.primary,
+                              strokeWidth: 2,
+                              color: Colors.grey[400],
                             ),
                           );
                         },
                         errorBuilder: (context, error, stackTrace) {
                           return Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withOpacity(0.3),
-                                  Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withOpacity(0.1),
-                                ],
-                              ),
-                            ),
-                            child: const Center(
+                            color: Colors.grey[50],
+                            child: Center(
                               child: Icon(
-                                Icons.camera_alt,
-                                size: 80,
-                                color: Colors.white,
+                                Icons.camera_alt_outlined,
+                                size: 64,
+                                color: Colors.grey[300],
                               ),
                             ),
                           );
                         },
                       ),
                     ),
-                  ),
-                  // Gradient overlay
-                  Positioned.fill(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.transparent,
-                            Colors.black.withOpacity(0.25),
+                      // Add to cart button - Floating
+                      if (onAddToCart != null)
+                        Positioned(
+                          top: 16,
+                          right: 16,
+                          child: Material(
+                            color: Colors.white,
+                            shape: const CircleBorder(),
+                            elevation: 0,
+                            shadowColor: Colors.black.withOpacity(0.1),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: onAddToCart,
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.08),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Icon(
+                                  Icons.add_shopping_cart_rounded,
+                                  color: Colors.black87,
+                                  size: 20,
+                                ),
+                              ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              ),
+              // Content - Apple Store Style
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Brand Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: const BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.all(Radius.circular(6)),
+                      ),
+                      child: Text(
+                        _brand.toUpperCase(),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // Product Name - Large, Bold
+                    Text(
+                      _name,
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w600,
+                        height: 1.2,
+                        letterSpacing: -0.5,
+                        color: Colors.black87,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 12),
+                    // Description - Subtle
+                    Text(
+                      _description,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: Colors.grey[600],
+                        height: 1.5,
+                        letterSpacing: -0.2,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 20),
+                    // Price - Prominent
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                      Text(
+                        priceLabel,
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                          letterSpacing: -0.8,
+                        ),
+                      ),
+                      if (priceCycle.isNotEmpty) ...[
+                        const SizedBox(width: 4),
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            priceCycle,
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                    ),
+                    // Key Features - Minimal Style
+                    if (_features.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: _features.take(3).map((feature) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[50],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.grey[200]!,
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            feature,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.grey[700],
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    // Divider
+                    Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: Colors.grey[200],
+                    ),
+                    const SizedBox(height: 16),
+                    // Location Info - Minimal
+                    Row(
+                      children: [
+                      Icon(
+                        Icons.location_on_outlined,
+                        size: 18,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              branchDisplay,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.black87,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                            if (addressDisplay != null && addressDisplay.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                addressDisplay,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[600],
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
                           ],
                         ),
                       ),
+                    ],
                     ),
-                  ),
-                  // Price badge
-                  Positioned(
-                    bottom: 12,
-                    left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Colors.white, Colors.white.withOpacity(0.9)],
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.attach_money,
-                            size: 16,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          Text(
-                            priceLabel,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
-                          if (priceCycle.isNotEmpty)
-                            Text(
-                              priceCycle,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  // Add to cart button
-                  if (onAddToCart != null)
-                    Positioned(
-                      bottom: 16,
-                      right: 16,
-                      child: Material(
-                        color: Theme.of(context).colorScheme.primary,
-                        shape: const CircleBorder(),
-                        elevation: 4,
-                        child: InkWell(
-                          customBorder: const CircleBorder(),
-                          onTap: onAddToCart,
-                          child: const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: Icon(
-                              Icons.add,
-                              color: Colors.white,
-                              size: 22,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            // Content
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Brand và rating
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.primary.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          _brand.toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.primary,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
+                    if (depositText.isNotEmpty) ...[
+                      const SizedBox(height: 12),
                       Row(
                         children: [
-                          Icon(Icons.star, size: 16, color: Colors.amber),
-                          const SizedBox(width: 4),
-                          Text(
-                            '4.8',
+                        Icon(
+                          Icons.account_balance_wallet_outlined,
+                          size: 18,
+                          color: Colors.grey[600],
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            depositText,
                             style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[700],
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.black87,
+                              letterSpacing: -0.2,
                             ),
                           ),
-                        ],
+                        ),
+                      ],
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 12),
-                  // Name
-                  Text(
-                    _name,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      height: 1.2,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 8),
-                  // Description
-                  Text(
-                    _description,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[600],
-                      height: 1.4,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildInfoRow(
-                    context,
-                    icon: Icons.location_on,
-                    label: 'Chi nhánh',
-                    value: branchDisplay,
-                    subtitle: addressDisplay,
-                  ),
-                  const SizedBox(height: 8),
-                  if (_ownerName != null) ...[
-                    _buildInfoRow(
-                      context,
-                      icon: Icons.person,
-                      label: 'Chủ sở hữu',
-                      value: _ownerName!,
-                    ),
-                    const SizedBox(height: 8),
                   ],
-                  if (_branchManagerName != null) ...[
-                    _buildInfoRow(
-                      context,
-                      icon: Icons.manage_accounts,
-                      label: 'Quản lý chi nhánh',
-                      value: _branchManagerName!,
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  _buildInfoRow(
-                    context,
-                    icon: Icons.account_balance_wallet,
-                    label: 'Đặt cọc',
-                    value: depositText,
-                  ),
-                  if (estimatedValueText != null) ...[
-                    const SizedBox(height: 8),
-                    _buildInfoRow(
-                      context,
-                      icon: Icons.monetization_on,
-                      label: 'Giá trị ước tính',
-                      value: estimatedValueText,
-                    ),
-                  ],
-                  if (platformFeeText != null) ...[
-                    const SizedBox(height: 8),
-                    _buildInfoRow(
-                      context,
-                      icon: Icons.percent,
-                      label: 'Phí nền tảng',
-                      value: platformFeeText,
-                    ),
-                  ],
-                  if (_features.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children:
-                          _features.take(3).map((feature) {
-                            return Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [Colors.grey[100]!, Colors.grey[50]!],
-                                ),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: Colors.grey[300]!,
-                                  width: 1,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.check_circle,
-                                    size: 14,
-                                    color:
-                                        Theme.of(context).colorScheme.primary,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    feature,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.grey[700],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                    ),
-                  ],
-                ],
+                ),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required String value,
-    String? subtitle,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        crossAxisAlignment:
-            subtitle != null
-                ? CrossAxisAlignment.start
-                : CrossAxisAlignment.center,
-        children: [
-          Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                  ),
-                ],
-              ],
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

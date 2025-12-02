@@ -1,7 +1,18 @@
 import 'package:flutter/material.dart';
 import '../models/booking_cart_item.dart';
 import '../services/api_service.dart';
-import '../screens/payment/payment_screen.dart';              
+import '../screens/payment/payment_screen.dart';
+
+// Validation result class
+class _ValidationResult {
+  final bool hasConflict;
+  final String message;
+
+  _ValidationResult({
+    required this.hasConflict,
+    required this.message,
+  });
+}
 
 class CheckoutScreen extends StatefulWidget {
   final List<BookingCartItem> cartItems;
@@ -26,8 +37,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final _emailController = TextEditingController();
   final _addressController = TextEditingController();
   final _notesController = TextEditingController();
+  DateTime? _pickupDate;
+  DateTime? _returnDate;
+  static const List<String> _provinceOptions = [
+    'Hà Nội',
+    'Hồ Chí Minh',
+    'Đà Nẵng',
+    'Hải Phòng',
+    'Cần Thơ',
+    'Đắk Lắk',
+    'Bình Dương',
+    'Khánh Hòa',
+    'Thanh Hóa',
+    'Nghệ An',
+  ];
+  String _selectedProvince = _provinceOptions.first;
   bool _isSubmitting = false;
   bool _isLoadingProfile = true;
+  String? _dateConflictMessage;
 
   @override
   void initState() {
@@ -64,6 +91,102 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return '${date.day.toString().padLeft(2, '0')}/'
         '${date.month.toString().padLeft(2, '0')}/'
         '${date.year}';
+  }
+
+  Future<void> _selectDate({required bool isPickup}) async {
+    final now = DateTime.now();
+    final initial = isPickup
+        ? (_pickupDate ?? now)
+        : (_returnDate ?? (_pickupDate?.add(const Duration(days: 1)) ?? now.add(const Duration(days: 1))));
+    final firstDate = isPickup ? now : (_pickupDate ?? now.add(const Duration(days: 1)));
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: firstDate,
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked == null) return;
+    setState(() {
+      if (isPickup) {
+        _pickupDate = picked;
+        if (_returnDate != null && _returnDate!.isBefore(picked)) {
+          _returnDate = null;
+        }
+      } else {
+        _returnDate = picked;
+      }
+    });
+  }
+
+  Widget _buildDateCard({
+    required String label,
+    required DateTime? date,
+    required VoidCallback onTap,
+    required IconData icon,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey[300] ?? Colors.grey),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                color: Theme.of(context).colorScheme.primary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatDate(date),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 16,
+              color: Colors.grey[400],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _loadProfile() async {
@@ -108,9 +231,70 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
+    // Validate dates
+    if (_pickupDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vui lòng chọn ngày bắt đầu thuê'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (_returnDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vui lòng chọn ngày kết thúc thuê'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (_returnDate!.isBefore(_pickupDate!) || _returnDate!.isAtSameMomentAs(_pickupDate!)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ngày kết thúc phải sau ngày bắt đầu'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Validate booking dates against existing bookings
     setState(() {
       _isSubmitting = true;
+      _dateConflictMessage = null;
     });
+
+    try {
+      // Check availability for all items in cart
+      final conflictResult = await _validateBookingDates(
+        pickupDate: _pickupDate!,
+        returnDate: _returnDate!,
+        cartItems: widget.cartItems,
+      );
+
+      if (conflictResult.hasConflict) {
+        if (!mounted) return;
+        setState(() {
+          _isSubmitting = false;
+          _dateConflictMessage = conflictResult.message;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(conflictResult.message),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+        return;
+      }
+    } catch (e) {
+      debugPrint('CheckoutScreen: Error validating dates: $e');
+      // Continue with booking creation if validation fails (backend will also check)
+    }
 
     try {
       // Tạo booking với payment integration
@@ -118,21 +302,30 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         customerName: _nameController.text.trim(),
         customerPhone: _phoneController.text.trim(),
         customerEmail: _emailController.text.trim(),
-        customerAddress: _addressController.text.trim().isEmpty
-            ? null
-            : _addressController.text.trim(),
+        province: _selectedProvince,
+        district: _addressController.text.trim(),
+        pickupAt: _pickupDate!,
+        returnAt: _returnDate!,
+        customerAddress: _addressController.text.trim(),
         notes: _notesController.text.trim().isEmpty
             ? null
             : _notesController.text.trim(),
         createPayment: true,
-        paymentAmount: widget.depositAmount > 0 
-            ? widget.depositAmount 
+        paymentAmount: widget.depositAmount > 0
+            ? widget.depositAmount
             : widget.totalAmount,
-        paymentDescription: 
+        paymentDescription:
             'Thanh toán đặt cọc cho đơn hàng từ giỏ hàng',
       );
 
       if (!mounted) return;
+
+      // Log booking data before navigation
+      debugPrint('CheckoutScreen: Booking created successfully');
+      debugPrint('CheckoutScreen: Booking data keys: ${bookingData.keys.toList()}');
+      debugPrint('CheckoutScreen: Booking ID: ${bookingData['id'] ?? bookingData['bookingId']}');
+      debugPrint('CheckoutScreen: Payment ID: ${bookingData['paymentId']}');
+      debugPrint('CheckoutScreen: Payment URL: ${bookingData['paymentUrl']}');
 
       // Điều hướng đến màn hình thanh toán
       Navigator.pushReplacement(
@@ -147,18 +340,152 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       );
     } catch (e) {
       if (!mounted) return;
+      final errorMsg = e.toString().replaceFirst('Exception: ', '');
+      final isConflict = _isDateConflictError(errorMsg);
       setState(() {
         _isSubmitting = false;
+        _dateConflictMessage = isConflict
+            ? 'Camera đã được đặt vào khoảng thời gian đã chọn. Vui lòng chọn ngày khác.'
+            : null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            e.toString().replaceFirst('Exception: ', ''),
+            isConflict
+                ? 'Vui lòng chọn ngày khác vì thời gian hiện tại bị trùng lịch.'
+                : errorMsg,
           ),
-          backgroundColor: Colors.red,
+          backgroundColor: isConflict ? Colors.orange : Colors.red,
         ),
       );
     }
+  }
+
+  // Validate booking dates against existing bookings
+  // Logic:
+  // 1. Return date của booking trước + 2 ngày delay = earliest pickup date của booking mới
+  // 2. Pickup date của booking mới + rental period + 2 ngày delay <= pickup date của booking sau (nếu có)
+  // 3. Khoảng cách tối thiểu giữa 2 booking là 7 ngày
+  Future<_ValidationResult> _validateBookingDates({
+    required DateTime pickupDate,
+    required DateTime returnDate,
+    required List<BookingCartItem> cartItems,
+  }) async {
+    const int delayDays = 2; // Delay để nhận máy sau khi trả
+    const int minGapDays = 7; // Khoảng cách tối thiểu giữa 2 booking
+
+    // Normalize dates to start of day for comparison
+    final normalizedPickup = DateTime(pickupDate.year, pickupDate.month, pickupDate.day);
+    final normalizedReturn = DateTime(returnDate.year, returnDate.month, returnDate.day);
+
+    // Check each item in cart
+    for (final cartItem in cartItems) {
+      final itemId = cartItem.cameraId;
+      if (itemId.isEmpty) continue;
+
+      try {
+        // Get all existing bookings for this item
+        final existingBookings = await ApiService.getItemBookings(itemId);
+
+        for (final booking in existingBookings) {
+          final existingPickupStr = booking['pickupAt']?.toString();
+          final existingReturnStr = booking['returnAt']?.toString();
+
+          if (existingPickupStr == null || existingReturnStr == null) continue;
+
+          DateTime? existingPickup;
+          DateTime? existingReturn;
+
+          try {
+            existingPickup = DateTime.parse(existingPickupStr);
+            existingReturn = DateTime.parse(existingReturnStr);
+          } catch (e) {
+            debugPrint('CheckoutScreen: Error parsing booking dates: $e');
+            continue;
+          }
+
+          // Normalize existing dates
+          final normalizedExistingPickup = DateTime(
+            existingPickup.year,
+            existingPickup.month,
+            existingPickup.day,
+          );
+          final normalizedExistingReturn = DateTime(
+            existingReturn.year,
+            existingReturn.month,
+            existingReturn.day,
+          );
+
+          // Check if new booking overlaps with existing booking
+          // Direct overlap check
+          if (normalizedPickup.isBefore(normalizedExistingReturn.add(Duration(days: delayDays))) &&
+              normalizedReturn.isAfter(normalizedExistingPickup.subtract(Duration(days: delayDays)))) {
+            return _ValidationResult(
+              hasConflict: true,
+              message: '${cartItem.cameraName} đã được đặt từ ${_formatDate(existingPickup)} đến ${_formatDate(existingReturn)}. '
+                  'Vui lòng chọn ngày khác (cần cách ít nhất ${minGapDays} ngày).',
+            );
+          }
+
+          // Check minimum gap requirement (7 days)
+          // Gap = days between existing return and new pickup
+          final gapAfterExisting = normalizedPickup.difference(normalizedExistingReturn).inDays;
+          // Gap = days between new return and existing pickup
+          final gapBeforeExisting = normalizedExistingPickup.difference(normalizedReturn).inDays;
+
+          // If new booking is after existing booking
+          if (normalizedPickup.isAfter(normalizedExistingReturn)) {
+            // Need at least delayDays to receive the item + minGapDays gap = minGapDays total
+            if (gapAfterExisting < minGapDays) {
+              final earliestAvailable = normalizedExistingReturn.add(Duration(days: minGapDays));
+              return _ValidationResult(
+                hasConflict: true,
+                message: '${cartItem.cameraName} cần khoảng cách tối thiểu ${minGapDays} ngày sau khi trả (${_formatDate(existingReturn)}). '
+                    'Ngày bắt đầu sớm nhất có thể: ${_formatDate(earliestAvailable)}.',
+              );
+            }
+          }
+          // If new booking is before existing booking
+          else if (normalizedReturn.isBefore(normalizedExistingPickup)) {
+            // Need at least delayDays after new return + minGapDays gap = minGapDays total
+            if (gapBeforeExisting < minGapDays) {
+              final latestAvailable = normalizedExistingPickup.subtract(Duration(days: minGapDays));
+              return _ValidationResult(
+                hasConflict: true,
+                message: '${cartItem.cameraName} cần khoảng cách tối thiểu ${minGapDays} ngày trước khi bắt đầu đặt tiếp (${_formatDate(existingPickup)}). '
+                    'Ngày kết thúc muộn nhất có thể: ${_formatDate(latestAvailable)}.',
+              );
+            }
+          }
+
+          // Check if new booking return + delay would conflict with next booking
+          final newReturnWithDelay = normalizedReturn.add(Duration(days: delayDays));
+          if (newReturnWithDelay.isAfter(normalizedExistingPickup) &&
+              normalizedPickup.isBefore(normalizedExistingPickup)) {
+            return _ValidationResult(
+              hasConflict: true,
+              message: '${cartItem.cameraName} không thể cho thuê từ ${_formatDate(pickupDate)} đến ${_formatDate(returnDate)} '
+                  'vì sau khi trả (${_formatDate(returnDate.add(Duration(days: delayDays)))}) sẽ trùng với booking tiếp theo (${_formatDate(existingPickup)}).',
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('CheckoutScreen: Error checking availability for ${cartItem.cameraName}: $e');
+        // Continue checking other items
+      }
+    }
+
+    return _ValidationResult(hasConflict: false, message: '');
+  }
+
+  bool _isDateConflictError(String message) {
+    final lower = message.toLowerCase();
+    return lower.contains('đã được đặt') ||
+        lower.contains('đã bị đặt') ||
+        lower.contains('already booked') ||
+        lower.contains('conflict') ||
+        lower.contains('trùng') ||
+        lower.contains('overlap');
   }
 
   @override
@@ -194,7 +521,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Thanh toán',
+                            'Tạo đặt lịch',
                             style: TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
@@ -309,11 +636,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               TextFormField(
                                 controller: _addressController,
                                 decoration: const InputDecoration(
-                                  labelText: 'Địa chỉ',
+                                  labelText: 'Địa chỉ (quận/huyện) *',
                                   border: OutlineInputBorder(),
                                   prefixIcon: Icon(Icons.location_on),
                                 ),
                                 maxLines: 2,
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Vui lòng nhập địa chỉ';
+                                  }
+                                  return null;
+                                },
                               ),
                               const SizedBox(height: 12),
                               TextFormField(
@@ -327,6 +660,92 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               ),
                             ],
                           ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Ngày thuê',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildDateCard(
+                                label: 'Ngày bắt đầu',
+                                date: _pickupDate,
+                                onTap: () => _selectDate(isPickup: true),
+                                icon: Icons.calendar_today,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildDateCard(
+                                label: 'Ngày kết thúc',
+                                date: _returnDate,
+                                onTap: () => _selectDate(isPickup: false),
+                                icon: Icons.event,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_dateConflictMessage != null) ...[
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                size: 18,
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  _dateConflictMessage!,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Theme.of(context).colorScheme.error,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        Text(
+                          'Tỉnh/Thành *',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          value: _selectedProvince,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          ),
+                          items: _provinceOptions
+                              .map(
+                                (province) => DropdownMenuItem(
+                                  value: province,
+                                  child: Text(province),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) {
+                            if (value != null) {
+                              setState(() {
+                                _selectedProvince = value;
+                              });
+                            }
+                          },
                         ),
                         const SizedBox(height: 16),
                         // Danh sách sản phẩm
@@ -369,8 +788,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     decoration: BoxDecoration(
                                       color: Colors.grey[50],
                                       borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: Colors.grey[200]!,
+                                          border: Border.all(
+                                        color: Colors.grey[200] ?? Colors.grey,
                                       ),
                                     ),
                                     child: Row(
@@ -389,7 +808,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                                 BorderRadius.circular(8),
                                           ),
                                           child: Icon(
-                                            item.type ==
+                                            (item.type ?? BookingItemType.camera) ==
                                                     BookingItemType.accessory
                                                 ? Icons.memory
                                                 : Icons.camera_alt,
@@ -530,9 +949,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       color: Colors.white,
                     ),
                   )
-                : const Icon(Icons.payment),
+                : const Icon(Icons.calendar_month),
             label: Text(
-              _isSubmitting ? 'Đang xử lý...' : 'Thanh toán',
+              _isSubmitting ? 'Đang xử lý...' : 'Tạo đặt lịch',
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,

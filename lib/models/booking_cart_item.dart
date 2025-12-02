@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../services/api_service.dart';
 
 class BookingCartItem {
@@ -35,8 +36,15 @@ class BookingCartItem {
   }
 
   factory BookingCartItem.fromJson(Map<String, dynamic> json) {
+    // Log raw JSON for debugging
+    debugPrint('BookingCartItem.fromJson: Raw JSON keys: ${json.keys.toList()}');
+    debugPrint('BookingCartItem.fromJson: Raw JSON (first 500 chars): ${json.toString().length > 500 ? json.toString().substring(0, 500) : json.toString()}');
+    
     final camera = _asMap(json['camera']);
     final bookingItem = _asMap(json['bookingItem']);
+    
+    debugPrint('BookingCartItem.fromJson: camera map keys: ${camera.keys.toList()}');
+    debugPrint('BookingCartItem.fromJson: bookingItem map keys: ${bookingItem.keys.toList()}');
 
     // Lấy ID - có thể là cart item ID hoặc booking item ID
     final id =
@@ -47,16 +55,23 @@ class BookingCartItem {
         _asString(bookingItem['id']) ??
         '';
     // Lấy item ID - có thể là cameraId hoặc accessoryId
+    // Try direct fields first, then nested objects
     final cameraId =
         _asString(json['cameraId']) ??
         _asString(json['itemId']) ??
         _asString(json['accessoryId']) ??
+        _asString(json['productId']) ??
+        _asString(json['id']) ??  // Try root id as fallback
         _asString(camera['id']) ??
         _asString(camera['_id']) ??
+        _asString(camera['cameraId']) ??
         _asString(bookingItem['cameraId']) ??
         _asString(bookingItem['itemId']) ??
         _asString(bookingItem['accessoryId']) ??
+        _asString(bookingItem['id']) ??
         '';
+    
+    debugPrint('BookingCartItem.fromJson: cameraId: "$cameraId"');
 
     final branchName =
         _asString(json['branchName']) ??
@@ -65,14 +80,22 @@ class BookingCartItem {
         '';
 
     // Lấy tên sản phẩm - có thể là camera hoặc accessory
+    // Try direct fields first, then nested objects
     String cameraName =
         _asString(json['cameraName']) ??
         _asString(json['itemName']) ??
         _asString(json['name']) ??
         _asString(json['accessoryName']) ??
+        _asString(json['productName']) ??
+        _asString(json['title']) ??
         _asString(camera['name']) ??
+        _asString(camera['cameraName']) ??
         _asString(bookingItem['name']) ??
+        _asString(bookingItem['cameraName']) ??
+        _asString(bookingItem['itemName']) ??
         '';
+    
+    debugPrint('BookingCartItem.fromJson: cameraName after first pass: "$cameraName"');
 
     if (cameraName.isEmpty) {
       // Thử build từ brand/model nếu có
@@ -104,6 +127,41 @@ class BookingCartItem {
         cameraName = 'Máy ảnh';
       }
     }
+    
+    // Log final values for debugging
+    debugPrint('BookingCartItem.fromJson: Final cameraName: "$cameraName"');
+    debugPrint('BookingCartItem.fromJson: Final cameraId: "$cameraId"');
+    debugPrint('BookingCartItem.fromJson: Final branchName: "$branchName"');
+    
+    // Warning if critical fields are missing (might indicate date conflict)
+    // Try to get cameraId from bookingItem if cameraId is empty
+    var finalCameraId = cameraId;
+    if (finalCameraId.isEmpty && cameraName == 'Máy ảnh') {
+      debugPrint('BookingCartItem.fromJson: WARNING - cameraId is empty but type is camera. This might indicate a date conflict or missing camera info from backend.');
+      debugPrint('BookingCartItem.fromJson: Attempting to extract cameraId from bookingItem...');
+      
+      // Try to get cameraId from bookingItem if available
+      if (bookingItem.isNotEmpty) {
+        final bookingItemCameraId = _asString(bookingItem['cameraId']) ??
+            _asString(bookingItem['itemId']) ??
+            _asString(bookingItem['id']);
+        if (bookingItemCameraId != null && bookingItemCameraId.isNotEmpty) {
+          debugPrint('BookingCartItem.fromJson: Found cameraId in bookingItem: $bookingItemCameraId');
+          finalCameraId = bookingItemCameraId;
+        }
+      }
+      
+      // Last resort: if we have id and type is camera, use id as cameraId
+      if (finalCameraId.isEmpty && id.isNotEmpty) {
+        final itemType = json['type'] ?? json['itemType'] ?? json['bookingItemType'];
+        if (itemType == 1 || itemType == BookingItemType.camera.value) {
+          debugPrint('BookingCartItem.fromJson: Using id as cameraId fallback: $id');
+          finalCameraId = id;
+        }
+      }
+    }
+    
+    debugPrint('BookingCartItem.fromJson: Final cameraId: "$finalCameraId" (original: "$cameraId")');
 
     final startDate = _parseDate(
       json['startDate'] ??
@@ -213,7 +271,7 @@ class BookingCartItem {
 
     return BookingCartItem(
       id: id,
-      cameraId: cameraId,
+      cameraId: finalCameraId,
       cameraName: cameraName,
       branchName: branchName,
       startDate: startDate,

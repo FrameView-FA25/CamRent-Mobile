@@ -274,35 +274,35 @@ class CameraModel {
     Map<String, dynamic>? owner;
     if (json['ownerUser'] != null) {
       owner = json['ownerUser'] as Map<String, dynamic>?;
-      debugPrint('Camera ${cameraId}: Found ownerUser');
+      debugPrint('Camera $cameraId: Found ownerUser');
     } else if (json['owner'] != null) {
       owner = json['owner'] as Map<String, dynamic>?;
-      debugPrint('Camera ${cameraId}: Found owner');
+      debugPrint('Camera $cameraId: Found owner');
     } else if (json['ownerUserProfile'] != null) {
       owner = json['ownerUserProfile'] as Map<String, dynamic>?;
-      debugPrint('Camera ${cameraId}: Found ownerUserProfile');
+      debugPrint('Camera $cameraId: Found ownerUserProfile');
     } else {
-      debugPrint('Camera ${cameraId}: No owner information found. Available keys: ${json.keys.where((k) => k.toString().toLowerCase().contains('owner')).toList()}');
+      debugPrint('Camera $cameraId: No owner information found. Available keys: ${json.keys.where((k) => k.toString().toLowerCase().contains('owner')).toList()}');
     }
     
     // Extract branch manager information
     Map<String, dynamic>? branchManager;
     if (branch != null) {
-      debugPrint('Camera ${cameraId}: Branch found. Branch keys: ${branch.keys.toList()}');
+      debugPrint('Camera $cameraId: Branch found. Branch keys: ${branch.keys.toList()}');
       if (branch['manager'] != null) {
         branchManager = branch['manager'] as Map<String, dynamic>?;
-        debugPrint('Camera ${cameraId}: Found branch.manager');
+        debugPrint('Camera $cameraId: Found branch.manager');
       } else if (branch['managerUser'] != null) {
         branchManager = branch['managerUser'] as Map<String, dynamic>?;
-        debugPrint('Camera ${cameraId}: Found branch.managerUser');
+        debugPrint('Camera $cameraId: Found branch.managerUser');
       } else if (branch['managerProfile'] != null) {
         branchManager = branch['managerProfile'] as Map<String, dynamic>?;
-        debugPrint('Camera ${cameraId}: Found branch.managerProfile');
+        debugPrint('Camera $cameraId: Found branch.managerProfile');
       } else {
-        debugPrint('Camera ${cameraId}: No branch manager found in branch object');
+        debugPrint('Camera $cameraId: No branch manager found in branch object');
       }
     } else {
-      debugPrint('Camera ${cameraId}: No branch object found');
+      debugPrint('Camera $cameraId: No branch object found');
     }
     
     var ownerName = _extractContactName(owner);
@@ -327,12 +327,12 @@ class CameraModel {
     }
     
     // Debug logging
-    debugPrint('Camera ${cameraId}: ownerName="$ownerName", branchManagerName="$branchManagerName"');
+    debugPrint('Camera $cameraId: ownerName="$ownerName", branchManagerName="$branchManagerName"');
     if (ownerName.isEmpty && owner != null) {
-      debugPrint('Camera ${cameraId}: ownerUser found but name extraction failed. Keys: ${owner.keys.toList()}');
+      debugPrint('Camera $cameraId: ownerUser found but name extraction failed. Keys: ${owner.keys.toList()}');
     }
     if (branchManagerName.isEmpty && branchManager != null) {
-      debugPrint('Camera ${cameraId}: branch manager found but name extraction failed. Keys: ${branchManager.keys.toList()}');
+      debugPrint('Camera $cameraId: branch manager found but name extraction failed. Keys: ${branchManager.keys.toList()}');
     }
 
     final descriptionParts = <String>[];

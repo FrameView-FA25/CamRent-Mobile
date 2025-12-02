@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import '../screens/login/login_screen.dart';
 import '../main/main_screen.dart';
+import '../screens/staff/staff_main_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -93,7 +94,6 @@ class _RegisterScreenState extends State<RegisterScreen>
 
       // Kiểm tra xem response có chứa payment URL không
       String? paymentUrl = response['paymentUrl']?.toString() ??
-          response['vnpayUrl']?.toString() ??
           response['url']?.toString() ??
           response['payment_url']?.toString();
 
@@ -131,12 +131,30 @@ class _RegisterScreenState extends State<RegisterScreen>
         }
       }
 
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (context) => const MainScreen(),
-        ),
-        (route) => false,
-      );
+      // Check user role and navigate to appropriate screen
+      final isStaffUser = await ApiService.isStaff();
+      final userRole = await ApiService.getUserRole();
+      debugPrint('RegisterScreen: User role after registration: $userRole');
+      debugPrint('RegisterScreen: Is Staff: $isStaffUser');
+      
+      // Navigate to StaffMainScreen if role is Staff
+      if (isStaffUser) {
+        // Staff role
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (context) => const StaffMainScreen(),
+          ),
+          (route) => false,
+        );
+      } else {
+        // Renter or other roles - go to regular MainScreen
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (context) => const MainScreen(),
+          ),
+          (route) => false,
+        );
+      }
     } catch (e) {
       if (!mounted) return;
 
@@ -279,55 +297,37 @@ class _RegisterScreenState extends State<RegisterScreen>
                                 ),
                               ],
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                            child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .primary
-                                        .withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Icon(
-                                    Icons.camera_alt_rounded,
-                                    size: 28,
-                                    color: Theme.of(context).colorScheme.primary,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Flexible(
-                                  child: ShaderMask(
-                                    shaderCallback: (bounds) => LinearGradient(
-                                      colors: [
-                                        Theme.of(context).colorScheme.primary,
-                                        Theme.of(context).colorScheme.secondary,
+                                ShaderMask(
+                                  shaderCallback: (bounds) => LinearGradient(
+                                    colors: [
+                                      Theme.of(context).colorScheme.primary,
+                                      Theme.of(context).colorScheme.secondary,
+                                    ],
+                                  ).createShader(bounds),
+                                  blendMode: BlendMode.srcIn,
+                                  child: Text(
+                                    'Tạo tài khoản',
+                                    textAlign: TextAlign.center,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.playfairDisplay(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.0,
+                                      shadows: const [
+                                        Shadow(
+                                          color: Colors.black26,
+                                          offset: Offset(2, 2),
+                                          blurRadius: 4,
+                                        ),
                                       ],
-                                    ).createShader(bounds),
-                                    child: Text(
-                                      'Tạo tài khoản mới',
-                                      textAlign: TextAlign.center,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.playfairDisplay(
-                                        fontSize: 28,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
-                                        letterSpacing: 1.0,
-                                        shadows: const [
-                                          Shadow(
-                                            color: Colors.black26,
-                                            offset: Offset(2, 2),
-                                            blurRadius: 4,
-                                          ),
-                                        ],
-                                      ),
                                     ),
                                   ),
                                 ),
+                                const SizedBox(height: 8),
                               ],
                             ),
                           ),
@@ -541,7 +541,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                             fontWeight: FontWeight.w500,
                           ),
                           decoration: InputDecoration(
-                            labelText: 'Số điện thoại (không bắt buộc)',
+                            labelText: 'Số điện thoại',
                             labelStyle: GoogleFonts.inter(
                               color: Colors.grey[600],
                               fontWeight: FontWeight.w500,
@@ -714,9 +714,6 @@ class _RegisterScreenState extends State<RegisterScreen>
                           validator: (value) {
                             if (value == null || value.isEmpty) {
                               return 'Vui lòng nhập mật khẩu';
-                            }
-                            if (value.length < 6) {
-                              return 'Mật khẩu phải có ít nhất 6 ký tự';
                             }
                             return null;
                           },

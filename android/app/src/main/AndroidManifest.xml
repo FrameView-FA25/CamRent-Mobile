@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Internet permission for network requests and opening URLs -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Camera permission for QR scanner -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    
     <application
         android:label="camera_for_rent_fa25"
         android:name="${applicationName}"
@@ -24,6 +29,23 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Deep link intent filter for payment callbacks -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="cameraforrent" android:host="payment" />
+            </intent-filter>
+            <!-- HTTP/HTTPS redirect handler for PayOS return URLs -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data 
+                    android:scheme="https" 
+                    android:host="camrent-backend.up.railway.app" 
+                    android:pathPrefix="/api/Payments/return" />
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
@@ -40,6 +62,15 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Required for url_launcher to open URLs in external browsers -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
         </intent>
     </queries>
 </manifest>

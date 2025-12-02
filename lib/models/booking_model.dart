@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class BookingModel {
   final String id;
   final int type;
@@ -193,8 +195,36 @@ class BookingModel {
       }
     }
 
+    // Get id - if empty, generate a temporary id from other fields
+    var id = json['id']?.toString() ?? json['_id']?.toString() ?? '';
+    id = id.trim();
+    
+    // Remove surrounding quotes if present (e.g., "abc123" -> abc123)
+    if (id.startsWith('"') && id.endsWith('"')) {
+      id = id.substring(1, id.length - 1);
+    }
+    if (id.startsWith("'") && id.endsWith("'")) {
+      id = id.substring(1, id.length - 1);
+    }
+    id = id.trim();
+    
+    // If id is empty, try to generate one from other fields
+    if (id.isEmpty) {
+      // Try to use createdAt + renterId as temporary identifier
+      final createdAtStr = json['createdAt']?.toString() ?? '';
+      final renterIdStr = json['renterId']?.toString() ?? '';
+      if (createdAtStr.isNotEmpty || renterIdStr.isNotEmpty) {
+        id = 'temp_${createdAtStr}_$renterIdStr'.hashCode.toString();
+        debugPrint('BookingModel: Generated temporary id: $id (original id was empty)');
+      } else {
+        // Last resort: use current timestamp
+        id = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+        debugPrint('BookingModel: Generated temporary id from timestamp: $id');
+      }
+    }
+
     return BookingModel(
-      id: json['id']?.toString() ?? '',
+      id: id,
       type: bookingType,
       renterId: json['renterId']?.toString(),
       renterName: renterName,
@@ -206,13 +236,48 @@ class BookingModel {
       branchName: branchName,
       status: bookingStatus,
       statusText: json['statusText']?.toString(),
-      snapshotRentalTotal: (json['snapshotRentalTotal'] ?? 0).toDouble(),
-      snapshotDepositAmount: (json['snapshotDepositAmount'] ?? 0).toDouble(),
-      snapshotBaseDailyRate: (json['snapshotBaseDailyRate'] ?? 0).toDouble(),
+
+      snapshotRentalTotal: _parseDouble(
+        json['snapshotRentalTotal'] ?? 
+        json['snapshot_rental_total'] ?? 
+        json['rentalTotal'] ?? 
+        json['rental_total'] ?? 
+        json['total'] ?? 
+        json['totalPrice'] ?? 
+        json['total_price'] ?? 
+        0,
+      ),
+      snapshotDepositAmount: _parseDouble(
+        json['snapshotDepositAmount'] ?? 
+        json['snapshot_deposit_amount'] ?? 
+        json['depositAmount'] ?? 
+        json['deposit_amount'] ?? 
+        json['deposit'] ?? 
+        0,
+      ),
+      snapshotBaseDailyRate: _parseDouble(
+        json['snapshotBaseDailyRate'] ?? 
+        json['snapshot_base_daily_rate'] ?? 
+        json['baseDailyRate'] ?? 
+        json['base_daily_rate'] ?? 
+        json['dailyRate'] ?? 
+        json['daily_rate'] ?? 
+        0,
+      ),
       items: items,
       createdAt: createdAt,
       raw: json,
     );
+  }
+ 
+  static double _parseDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is num) {
+      return value.toDouble();
+    }
+    final text = value.toString().replaceAll(',', '').trim();
+    if (text.isEmpty) return 0.0;
+    return double.tryParse(text) ?? 0.0;
   }
 }
 

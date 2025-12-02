@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/booking_cart_item.dart';
 
 enum BookingItemType {
   camera(1),
@@ -175,10 +174,42 @@ class ApiService {
     await prefs.setString('auth_token', token);
   }
 
-  // Clear auth token
+  // Save user role to shared preferences (as string)
+  static Future<void> _saveRole(String? role) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (role != null && role.isNotEmpty) {
+      await prefs.setString('user_role', role);
+      debugPrint('ApiService: Saved user role: $role');
+    } else {
+      await prefs.remove('user_role');
+    }
+  }
+
+  // Get user role from shared preferences
+  static Future<String?> getUserRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    final role = prefs.getString('user_role');
+    debugPrint('ApiService: Retrieved user role: $role');
+    return role;
+  }
+  
+  // Check if user is Staff
+  static Future<bool> isStaff() async {
+    final role = await getUserRole();
+    return role != null && role.toLowerCase() == 'staff';
+  }
+  
+  // Check if user is Renter
+  static Future<bool> isRenter() async {
+    final role = await getUserRole();
+    return role != null && role.toLowerCase() == 'renter';
+  }
+
+  // Clear auth token and role
   static Future<void> clearToken() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('auth_token');
+    await prefs.remove('user_role');
   }
 
   // Get headers with authentication
@@ -286,10 +317,182 @@ class ApiService {
 
       final data = _handleResponse(response);
 
+      // Log full response for debugging
+      debugPrint('ApiService: Login response data: $data');
+      debugPrint('ApiService: Login response data keys: ${data.keys.toList()}');
+
       // Save token if available
       final token = _extractToken(data);
       if (token != null) {
         await _saveToken(token);
+        debugPrint('ApiService: Token saved successfully');
+      } else {
+        debugPrint('ApiService: WARNING - No token found in response');
+      }
+
+      // Extract and save user role if available
+      // Role might be in data['roles'] (array), data['role'], data['user']['roles'], etc.
+      String? userRole;
+      
+      // Try roles array (most common format: roles: ["Staff"] or roles: ["Renter"])
+      if (data.containsKey('roles') && data['roles'] != null) {
+        debugPrint('ApiService: Found roles field: ${data['roles']} (type: ${data['roles'].runtimeType})');
+        if (data['roles'] is List) {
+          final rolesList = data['roles'] as List;
+          if (rolesList.isNotEmpty) {
+            // Get first role from array
+            final firstRole = rolesList.first;
+            if (firstRole is String) {
+              userRole = firstRole;
+            } else {
+              userRole = firstRole.toString();
+            }
+            debugPrint('ApiService: Extracted role from roles array: $userRole');
+          }
+        }
+      }
+      
+      // Try direct role field (string)
+      if (userRole == null && data.containsKey('role') && data['role'] != null) {
+        debugPrint('ApiService: Found role field: ${data['role']} (type: ${data['role'].runtimeType})');
+        if (data['role'] is String) {
+          userRole = data['role'] as String;
+        } else {
+          userRole = data['role'].toString();
+        }
+      }
+      
+      // Try nested user.roles or user.role
+      if (userRole == null && data.containsKey('user') && data['user'] != null) {
+        debugPrint('ApiService: Found user field: ${data['user']}');
+        if (data['user'] is Map) {
+          final user = data['user'] as Map<String, dynamic>;
+          debugPrint('ApiService: User keys: ${user.keys.toList()}');
+          
+          // Try user.roles array
+          if (user.containsKey('roles') && user['roles'] != null) {
+            if (user['roles'] is List) {
+              final rolesList = user['roles'] as List;
+              if (rolesList.isNotEmpty) {
+                final firstRole = rolesList.first;
+                if (firstRole is String) {
+                  userRole = firstRole;
+                } else {
+                  userRole = firstRole.toString();
+                }
+                debugPrint('ApiService: Extracted role from user.roles array: $userRole');
+              }
+            }
+          }
+          
+          // Try user.role string
+          if (userRole == null && user.containsKey('role') && user['role'] != null) {
+            debugPrint('ApiService: Found user.role: ${user['role']} (type: ${user['role'].runtimeType})');
+            if (user['role'] is String) {
+              userRole = user['role'] as String;
+            } else {
+              userRole = user['role'].toString();
+            }
+          }
+        }
+      }
+      
+      // Try userRole field
+      if (userRole == null && data.containsKey('userRole') && data['userRole'] != null) {
+        debugPrint('ApiService: Found userRole field: ${data['userRole']} (type: ${data['userRole'].runtimeType})');
+        if (data['userRole'] is String) {
+          userRole = data['userRole'] as String;
+        } else {
+          userRole = data['userRole'].toString();
+        }
+      }
+      
+      // Try to get role from token payload (JWT decode)
+      if (userRole == null && token != null) {
+        try {
+          final parts = token.split('.');
+          if (parts.length == 3) {
+            final payload = parts[1];
+            String normalizedPayload = payload;
+            switch (payload.length % 4) {
+              case 1:
+                normalizedPayload += '===';
+                break;
+              case 2:
+                normalizedPayload += '==';
+                break;
+              case 3:
+                normalizedPayload += '=';
+                break;
+            }
+            try {
+              final decodedPayload = utf8.decode(base64.decode(normalizedPayload));
+              final payloadJson = jsonDecode(decodedPayload) as Map<String, dynamic>;
+              debugPrint('ApiService: JWT payload keys: ${payloadJson.keys.toList()}');
+              
+              // Try roles array in JWT
+              if (payloadJson.containsKey('roles') && payloadJson['roles'] is List) {
+                final rolesList = payloadJson['roles'] as List;
+                if (rolesList.isNotEmpty) {
+                  final firstRole = rolesList.first;
+                  if (firstRole is String) {
+                    userRole = firstRole;
+                  } else {
+                    userRole = firstRole.toString();
+                  }
+                  debugPrint('ApiService: Found role in JWT roles array: $userRole');
+                }
+              }
+              
+              // Try role string in JWT
+              if (userRole == null && payloadJson.containsKey('role')) {
+                final jwtRole = payloadJson['role'];
+                if (jwtRole is String) {
+                  userRole = jwtRole;
+                } else if (jwtRole is List && jwtRole.isNotEmpty) {
+                  userRole = jwtRole.first.toString();
+                } else {
+                  userRole = jwtRole.toString();
+                }
+                debugPrint('ApiService: Found role in JWT: $userRole');
+              }
+              
+              // Try common JWT role claims
+              for (final claim in ['http://schemas.microsoft.com/ws/2008/06/identity/claims/role', 'Role', 'UserRole']) {
+                if (userRole == null && payloadJson.containsKey(claim)) {
+                  final claimRole = payloadJson[claim];
+                  if (claimRole is String) {
+                    userRole = claimRole;
+                    break;
+                  } else if (claimRole is List && claimRole.isNotEmpty) {
+                    userRole = claimRole.first.toString();
+                    break;
+                  } else {
+                    userRole = claimRole.toString();
+                    break;
+                  }
+                }
+              }
+            } catch (e) {
+              debugPrint('ApiService: Error decoding JWT payload: $e');
+            }
+          }
+        } catch (e) {
+          debugPrint('ApiService: Error parsing JWT token: $e');
+        }
+      }
+      
+      if (userRole != null) {
+        // Normalize role name (capitalize first letter)
+        userRole = userRole.trim();
+        if (userRole.isNotEmpty) {
+          userRole = userRole[0].toUpperCase() + userRole.substring(1).toLowerCase();
+        }
+        await _saveRole(userRole);
+        debugPrint('ApiService: Login - User role detected and saved: $userRole');
+      } else {
+        debugPrint('ApiService: Login - WARNING: No user role found in response or token');
+        debugPrint('ApiService: Login - Full response data: $data');
       }
 
       return data;
@@ -378,7 +581,7 @@ class ApiService {
       // Check status code before processing
       if (response.statusCode >= 200 && response.statusCode < 300) {
         debugPrint('Cameras API Response Status: ${response.statusCode}');
-        debugPrint('Cameras API Response Body (first 500 chars): ${response.body.length > 500 ? response.body.substring(0, 500) + "..." : response.body}');
+        debugPrint('Cameras API Response Body (first 500 chars): ${response.body.length > 500 ? "${response.body.substring(0, 500)}..." : response.body}');
         
         List<dynamic> extractList(dynamic source) {
           if (source is List) {
@@ -474,11 +677,11 @@ class ApiService {
           return list;
         } catch (e) {
           debugPrint('Error parsing cameras response: $e');
-          debugPrint('Response body (first 1000 chars): ${response.body.length > 1000 ? response.body.substring(0, 1000) + "..." : response.body}');
+          debugPrint('Response body (first 1000 chars): ${response.body.length > 1000 ? "${response.body.substring(0, 1000)}..." : response.body}');
           
           // If it's already an Exception, re-throw it
           if (e is Exception) {
-            throw e;
+            rethrow;
           }
           throw Exception('Invalid response format from server: ${e.toString()}');
         }
@@ -523,7 +726,7 @@ class ApiService {
       // Check status code before processing
       if (response.statusCode >= 200 && response.statusCode < 300) {
         debugPrint('Accessories API Response Status: ${response.statusCode}');
-        debugPrint('Accessories API Response Body (first 500 chars): ${response.body.length > 500 ? response.body.substring(0, 500) + "..." : response.body}');
+        debugPrint('Accessories API Response Body (first 500 chars): ${response.body.length > 500 ? "${response.body.substring(0, 500)}..." : response.body}');
         
         List<dynamic> extractList(dynamic source) {
           if (source is List) {
@@ -618,11 +821,11 @@ class ApiService {
           return list;
         } catch (e) {
           debugPrint('Error parsing accessories response: $e');
-          debugPrint('Response body (first 1000 chars): ${response.body.length > 1000 ? response.body.substring(0, 1000) + "..." : response.body}');
+          debugPrint('Response body (first 1000 chars): ${response.body.length > 1000 ? "${response.body.substring(0, 1000)}..." : response.body}');
           
           // If it's already an Exception, re-throw it
           if (e is Exception) {
-            throw e;
+            rethrow;
           }
           throw Exception('Invalid response format from server: ${e.toString()}');
         }
@@ -656,31 +859,59 @@ class ApiService {
       }
 
       final data = _handleResponse(response);
+      
+      // Log full response for debugging
+      debugPrint('getBookingCart: Response status: ${response.statusCode}');
+      debugPrint('getBookingCart: Response body (first 1000 chars): ${response.body.length > 1000 ? "${response.body.substring(0, 1000)}..." : response.body}');
+      debugPrint('getBookingCart: Parsed data type: ${data.runtimeType}');
+      debugPrint('getBookingCart: Parsed data keys: ${data.keys.toList()}');
+      debugPrint('getBookingCart: Full parsed data: $data');
+      
       List<dynamic>? items;
       final result = Map<String, dynamic>.from(data);
 
-      final directKeys = ['items', 'cartItems'];
+      final directKeys = ['items', 'cartItems', 'cartItemsList', 'bookingItems'];
       for (final key in directKeys) {
         final value = data[key];
+        debugPrint('getBookingCart: Checking key "$key": ${value.runtimeType}');
         if (value is List) {
+          debugPrint('getBookingCart: Found items list in key "$key" with ${value.length} items');
           items = value;
           break;
         }
       }
 
       if (items == null) {
+        debugPrint('getBookingCart: Items not found in direct keys, checking nested data...');
         final nested = data['data'];
+        debugPrint('getBookingCart: Nested data type: ${nested.runtimeType}');
         if (nested is List) {
+          debugPrint('getBookingCart: Found items list in data with ${nested.length} items');
           items = nested;
         } else if (nested is Map<String, dynamic>) {
+          debugPrint('getBookingCart: Nested data keys: ${nested.keys.toList()}');
           for (final key in directKeys) {
             final value = nested[key];
             if (value is List) {
+              debugPrint('getBookingCart: Found items list in nested["$key"] with ${value.length} items');
               items = value;
               break;
             }
           }
         }
+      }
+
+      if (items == null) {
+        debugPrint('getBookingCart: WARNING - No items found in response!');
+        debugPrint('getBookingCart: All top-level keys: ${data.keys.toList()}');
+        // Try to find any list in the response
+        for (final entry in data.entries) {
+          if (entry.value is List) {
+            debugPrint('getBookingCart: Found list in key "${entry.key}" with ${(entry.value as List).length} items');
+          }
+        }
+      } else {
+        debugPrint('getBookingCart: Successfully extracted ${items.length} items');
       }
 
       result['items'] = items ?? const [];
@@ -718,7 +949,59 @@ class ApiService {
         body: jsonEncode(body),
       );
 
-      return _handleResponse(response);
+      debugPrint('addItemToCart: Request body: ${jsonEncode(body)}');
+      debugPrint('addItemToCart: Response status: ${response.statusCode}');
+      debugPrint('addItemToCart: Response body: ${response.body}');
+      
+      // Handle 400 status code specially - might be "already in cart" message
+      if (response.statusCode == 400) {
+        final errorMessage = _extractErrorMessage(response.body) ?? response.body;
+        debugPrint('addItemToCart: 400 error - $errorMessage');
+        
+        // Check if it's an "already in cart" message
+        final bodyLower = errorMessage.toLowerCase();
+        final isAlreadyInCart = bodyLower.contains('đã có trong giỏ') ||
+            bodyLower.contains('already in cart') ||
+            bodyLower.contains('đã tồn tại') ||
+            bodyLower.contains('already exists');
+        
+        if (isAlreadyInCart) {
+          // Return a special response indicating item is already in cart
+          // This allows UI to handle it gracefully
+          return {
+            'success': false,
+            'alreadyInCart': true,
+            'message': 'Thiết bị đã có trong giỏ hàng rồi',
+          };
+        }
+        
+        // For other 400 errors, throw exception
+        throw Exception(errorMessage);
+      }
+      
+      final result = _handleResponse(response);
+      debugPrint('addItemToCart: Parsed response: $result');
+      debugPrint('addItemToCart: Response keys: ${result.keys.toList()}');
+      
+      // Check if response contains items (some APIs return cart with items)
+      if (result.containsKey('items') && result['items'] is List) {
+        debugPrint('addItemToCart: Response contains items list with ${(result['items'] as List).length} items');
+      }
+      
+      // Log cart ID if present
+      final cartId = result['cartId'] ?? result['cart_id'] ?? result['id'] ?? result['_id'];
+      if (cartId != null) {
+        debugPrint('addItemToCart: Cart ID found: $cartId');
+      } else {
+        debugPrint('addItemToCart: No cart ID found in response');
+      }
+      
+      // Always return success even if no cartId - cart will be reloaded separately
+      if (!result.containsKey('success')) {
+        result['success'] = true;
+      }
+      
+      return result;
     } catch (e) {
       throw Exception('Failed to add to cart: ${e.toString()}');
     }
@@ -932,6 +1215,10 @@ class ApiService {
     required String customerName,
     required String customerPhone,
     required String customerEmail,
+    required String province,
+    required String district,
+    required DateTime pickupAt,
+    required DateTime returnAt,
     String? customerAddress,
     String? notes,
     bool createPayment = true,
@@ -939,126 +1226,83 @@ class ApiService {
     String? paymentDescription,
   }) async {
     try {
-      // Step 0: Get cart items to extract dates and location info
       final cartData = await getBookingCart();
       final cartItemsRaw = cartData['items'] as List<dynamic>? ?? [];
       
-      debugPrint('Cart items count: ${cartItemsRaw.length}');
+      debugPrint('createBookingFromCart: Cart items count: ${cartItemsRaw.length}');
+      debugPrint('createBookingFromCart: Cart data keys: ${cartData.keys.toList()}');
       
-      // Parse cart items using BookingCartItem to get proper dates
-      final cartItems = <BookingCartItem>[];
+      if (cartItemsRaw.isEmpty) {
+        throw Exception('Giỏ hàng đang trống. Vui lòng thêm sản phẩm trước khi đặt lịch.');
+      }
+      
+      // Log each cart item structure for debugging
       for (int i = 0; i < cartItemsRaw.length; i++) {
         final item = cartItemsRaw[i];
         if (item is Map<String, dynamic>) {
-          try {
-            // Log raw item data for debugging
-            debugPrint('Cart item $i raw data: ${item.keys.toList()}');
-            if (item.containsKey('startDate') || item.containsKey('start_date') || 
-                item.containsKey('fromDate') || item.containsKey('from')) {
-              debugPrint('Cart item $i date fields found');
+          debugPrint('createBookingFromCart: Item $i keys: ${item.keys.toList()}');
+          debugPrint('createBookingFromCart: Item $i has camera: ${item.containsKey('camera')}');
+          debugPrint('createBookingFromCart: Item $i has bookingItem: ${item.containsKey('bookingItem')}');
+          if (item.containsKey('camera')) {
+            final camera = item['camera'];
+            if (camera is Map<String, dynamic>) {
+              debugPrint('createBookingFromCart: Item $i camera keys: ${camera.keys.toList()}');
+            } else {
+              debugPrint('createBookingFromCart: Item $i camera is null or not a map: ${camera.runtimeType}');
             }
-            if (item.containsKey('bookingItem')) {
-              final bookingItem = item['bookingItem'];
-              if (bookingItem is Map<String, dynamic>) {
-                debugPrint('Cart item $i bookingItem keys: ${bookingItem.keys.toList()}');
-              }
-            }
-            
-            final parsedItem = BookingCartItem.fromJson(item);
-            cartItems.add(parsedItem);
-            
-            debugPrint('Cart item $i parsed - startDate: ${parsedItem.startDate}, endDate: ${parsedItem.endDate}');
-          } catch (e, stackTrace) {
-            debugPrint('Warning: Failed to parse cart item $i: $e');
-            debugPrint('StackTrace: $stackTrace');
           }
         }
       }
-      
-      // Find earliest start date and latest end date from cart items
-      DateTime? earliestStartDate;
-      DateTime? latestEndDate;
-      
-      for (final item in cartItems) {
-        // Use parsed dates from BookingCartItem
-        final startDate = item.startDate;
-        final endDate = item.endDate;
-        
-        if (startDate != null) {
-          if (earliestStartDate == null || startDate.isBefore(earliestStartDate)) {
-            earliestStartDate = startDate;
-          }
-        }
-        
-        if (endDate != null) {
-          if (latestEndDate == null || endDate.isAfter(latestEndDate)) {
-            latestEndDate = endDate;
-          }
-        }
+
+      String? cartId = cartData['id']?.toString() ?? cartData['cartId']?.toString();
+      if (cartId == null || cartId.isEmpty) {
+        cartId = cartData['cartId']?.toString() ?? cartData['id']?.toString();
       }
-      
-      debugPrint('Extracted dates from cart: earliestStartDate=$earliestStartDate, latestEndDate=$latestEndDate');
-      
-      // Use current time if no dates found
-      final now = DateTime.now();
-      // Set time to a reasonable hour (e.g., 10 AM) if using default
-      var pickupAt = earliestStartDate ?? DateTime(now.year, now.month, now.day, 10);
-      var returnAt = latestEndDate ?? DateTime(now.year, now.month, now.day + 1, 18);
-      
-      debugPrint('Initial dates (local): pickupAt=$pickupAt, returnAt=$returnAt');
-      
-      // Normalize dates - ensure they're at the start/end of day
-      // Convert to UTC to avoid timezone issues
-      // Preserve the date values but convert to UTC
-      pickupAt = DateTime.utc(pickupAt.year, pickupAt.month, pickupAt.day, 10, 0, 0);
-      returnAt = DateTime.utc(returnAt.year, returnAt.month, returnAt.day, 18, 0, 0);
-      
-      // Ensure pickupAt is strictly before returnAt
-      if (pickupAt.isAfter(returnAt) || pickupAt.isAtSameMomentAs(returnAt)) {
-        debugPrint('Warning: pickupAt ($pickupAt) is not before returnAt ($returnAt), adjusting...');
-        // If dates are wrong, use returnAt as next day after pickupAt
-        returnAt = DateTime.utc(pickupAt.year, pickupAt.month, pickupAt.day + 1, 18, 0, 0);
+
+      // Normalize pickup/return to UTC at fixed hours
+      final normalizedPickup = DateTime.utc(
+        pickupAt.year,
+        pickupAt.month,
+        pickupAt.day,
+        10,
+        0,
+        0,
+      );
+      var normalizedReturn = DateTime.utc(
+        returnAt.year,
+        returnAt.month,
+        returnAt.day,
+        18,
+        0,
+        0,
+      );
+      if (!normalizedReturn.isAfter(normalizedPickup)) {
+        normalizedReturn = normalizedPickup.add(const Duration(days: 1));
       }
-      
-      // Triple check - ensure returnAt is definitely after pickupAt
-      if (!returnAt.isAfter(pickupAt)) {
-        debugPrint('Error: returnAt ($returnAt) is not after pickupAt ($pickupAt), forcing next day...');
-        returnAt = DateTime.utc(pickupAt.year, pickupAt.month, pickupAt.day + 1, 18, 0, 0);
-      }
-      
-      // Final validation
-      final duration = returnAt.difference(pickupAt);
-      debugPrint('Using dates (UTC) - pickupAt: $pickupAt, returnAt: $returnAt');
-      debugPrint('Date difference: ${duration.inHours} hours (${duration.inDays} days)');
-      debugPrint('Date comparison - pickupAt isBefore returnAt: ${pickupAt.isBefore(returnAt)}');
-      debugPrint('Date comparison - pickupAt isAfter returnAt: ${pickupAt.isAfter(returnAt)}');
-      debugPrint('Date comparison - pickupAt isAtSameMomentAs returnAt: ${pickupAt.isAtSameMomentAs(returnAt)}');
-      
-      // Build location Address object
-      // Format: { "country": "VietNam", "province": "...", "district": "..." }
+
       final locationAddress = <String, dynamic>{
-        'country': 'VietNam',
-        'province': customerAddress ?? 'LamDong',
-        'district': 'Dalat',
+        'country': 'Vietnam',
+        'province': province,
+        'district': district,
       };
-      
-      // Step 1: Create booking from cart
-      // Format dates to ISO8601 strings
-      final pickupAtString = pickupAt.toIso8601String();
-      final returnAtString = returnAt.toIso8601String();
-      
-      debugPrint('Date strings to send - pickupAt: $pickupAtString, returnAt: $returnAtString');
-      
-      // Request body format: only location, pickupAt, returnAt (no customer fields, no notes)
+
       final requestBody = <String, dynamic>{
-        'location': locationAddress, // lowercase 'location'
-        'pickupAt': pickupAtString,
-        'returnAt': returnAtString,
+        if (cartId != null && cartId.isNotEmpty) 'cartId': cartId,
+        'location': locationAddress,
+        'pickupAt': normalizedPickup.toIso8601String(),
+        'returnAt': normalizedReturn.toIso8601String(),
+        'customerName': customerName,
+        'customerPhone': customerPhone,
+        'customerEmail': customerEmail,
+        if (customerAddress != null && customerAddress.isNotEmpty)
+          'customerAddress': customerAddress,
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
       };
 
       debugPrint('Creating booking from cart with body: $requestBody');
-      debugPrint('Request body JSON: ${jsonEncode(requestBody)}');
-      
+      debugPrint('createBookingFromCart: CartId being sent: $cartId');
+      debugPrint('createBookingFromCart: Cart items count before booking: ${cartItemsRaw.length}');
+      debugPrint('createBookingFromCart: Cart items structure: ${cartItemsRaw.map((item) => item is Map ? item.keys.toList() : item.runtimeType).toList()}');
       final bookingResponse = await http.post(
         Uri.parse('$baseUrl/Bookings'),
         headers: await _getHeaders(requiresAuth: true),
@@ -1067,6 +1311,7 @@ class ApiService {
 
       debugPrint('Booking creation response: Status ${bookingResponse.statusCode}');
       debugPrint('Response body: ${bookingResponse.body.isNotEmpty ? (bookingResponse.body.length > 500 ? "${bookingResponse.body.substring(0, 500)}..." : bookingResponse.body) : "empty"}');
+      debugPrint('Response headers: ${bookingResponse.headers}');
 
       // Check for errors before processing
       if (bookingResponse.statusCode >= 400) {
@@ -1078,61 +1323,299 @@ class ApiService {
         );
       }
 
-      final bookingData = _handleResponse(bookingResponse);
+      // Try to extract booking ID from response
+      String? bookingId;
+      Map<String, dynamic> bookingData;
       
-      // Step 2: Create payment authorization if requested
-      if (createPayment) {
-        final bookingId = bookingData['id']?.toString() ?? 
-                         bookingData['bookingId']?.toString();
-        
-        if (bookingId != null && bookingId.isNotEmpty) {
-          try {
-            // Create payment authorization
-            final paymentId = await createPaymentAuthorization(
-              bookingId: bookingId,
-            );
-            
-            // Initialize VNPay/VietQR payment if amount is provided
-            String? paymentUrl;
-            if (paymentAmount != null && paymentAmount > 0) {
-              paymentUrl = await initializeVnPayPayment(
-                paymentId: paymentId,
-                amount: paymentAmount,
-                description: paymentDescription ?? 
-                          'Thanh toán đặt cọc cho đơn hàng $bookingId',
-              );
-            }
-            
-            // Merge payment info into booking data
-            return {
-              ...bookingData,
-              'paymentId': paymentId,
-              'paymentUrl': paymentUrl,
-            };
-          } catch (e) {
-            // If payment creation fails, still return booking data
-            // but log the error
-            // Log error but don't throw - booking is still created
-            debugPrint('Warning: Failed to create payment: $e');
-            return bookingData;
+      // IMPORTANT: If cart ID is the same as booking ID, use cartId as bookingId
+      // This is the primary method since backend uses cartId as bookingId
+      if (cartId != null && cartId.isNotEmpty) {
+        bookingId = cartId;
+        debugPrint('createBookingFromCart: Using cartId as bookingId: $bookingId');
+      }
+      
+      // First, try to parse response as JSON
+      try {
+        bookingData = _handleResponse(bookingResponse);
+        // Try to get bookingId from response, but cartId takes priority
+        final responseBookingId = bookingData['id']?.toString() ?? 
+                   bookingData['bookingId']?.toString() ??
+                   bookingData['_id']?.toString();
+        if (responseBookingId != null && responseBookingId.isNotEmpty) {
+          bookingId = responseBookingId;
+          debugPrint('createBookingFromCart: Found bookingId in response: $bookingId');
+        }
+        debugPrint('createBookingFromCart: Parsed bookingData keys: ${bookingData.keys.toList()}');
+      } catch (e) {
+        debugPrint('Failed to parse booking response as JSON: $e');
+        bookingData = {'success': true, 'message': bookingResponse.body};
+      }
+      
+      // Try to extract bookingId from response body string if it contains UUID
+      if ((bookingId == null || bookingId.isEmpty) && bookingResponse.body.isNotEmpty) {
+        // Look for UUID pattern in response body
+        final uuidPattern = RegExp(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}', caseSensitive: false);
+        final matches = uuidPattern.allMatches(bookingResponse.body);
+        if (matches.isNotEmpty) {
+          // Use the first UUID found (likely the bookingId)
+          bookingId = matches.first.group(0);
+          debugPrint('createBookingFromCart: Extracted bookingId from response body string: $bookingId');
+        }
+      }
+      
+      // Final fallback: use cartId if still no bookingId
+      if ((bookingId == null || bookingId.isEmpty) && cartId != null && cartId.isNotEmpty) {
+        bookingId = cartId;
+        debugPrint('createBookingFromCart: Using cartId as final fallback for bookingId: $bookingId');
+      }
+      
+      // If bookingId not in response, try to get from Location header
+      if ((bookingId == null || bookingId.isEmpty) && bookingResponse.headers.containsKey('location')) {
+        final location = bookingResponse.headers['location'];
+        if (location != null && location.isNotEmpty) {
+          // Extract ID from URL like /Bookings/{id} or /api/Bookings/{id}
+          final uriMatch = RegExp(r'/(?:Bookings|bookings)/([a-f0-9-]+)', caseSensitive: false).firstMatch(location);
+          if (uriMatch != null) {
+            bookingId = uriMatch.group(1);
+            debugPrint('Extracted bookingId from Location header: $bookingId');
           }
         }
       }
       
-      return bookingData;
+      // If still no bookingId, try to get the latest booking
+      if (bookingId == null || bookingId.isEmpty) {
+        debugPrint('BookingId not found in response, trying to get latest booking...');
+        try {
+          final bookingsRaw = await getBookings();
+          if (bookingsRaw.isNotEmpty) {
+            // getBookings returns List<dynamic> (List<Map<String, dynamic>>)
+            // Sort by createdAt field in the map
+            final bookings = bookingsRaw.whereType<Map<String, dynamic>>().toList();
+            if (bookings.isNotEmpty) {
+              bookings.sort((a, b) {
+                DateTime? aDate;
+                DateTime? bDate;
+                
+                // Try to parse createdAt from map
+                if (a['createdAt'] != null) {
+                  aDate = DateTime.tryParse(a['createdAt'].toString());
+                }
+                if (b['createdAt'] != null) {
+                  bDate = DateTime.tryParse(b['createdAt'].toString());
+                }
+                
+                // If no createdAt, use pickupAt as fallback
+                if (aDate == null && a['pickupAt'] != null) {
+                  aDate = DateTime.tryParse(a['pickupAt'].toString());
+                }
+                if (bDate == null && b['pickupAt'] != null) {
+                  bDate = DateTime.tryParse(b['pickupAt'].toString());
+                }
+                
+                // Default to now if still null
+                aDate ??= DateTime.now();
+                bDate ??= DateTime.now();
+                
+                return bDate.compareTo(aDate);
+              });
+              
+              // Get ID from the most recent booking
+              final latestBooking = bookings.first;
+              bookingId = latestBooking['id']?.toString() ?? 
+                          latestBooking['_id']?.toString();
+              
+              if (bookingId != null && bookingId.isNotEmpty) {
+                debugPrint('Found bookingId from latest booking: $bookingId');
+                // Update bookingData with full booking info
+                bookingData = {
+                  ...bookingData,
+                  'id': bookingId,
+                  'bookingId': bookingId,
+                };
+              } else {
+                debugPrint('WARNING: Latest booking found but has no ID');
+              }
+            }
+          }
+        } catch (e, stackTrace) {
+          debugPrint('Failed to get latest booking: $e');
+          debugPrint('StackTrace: $stackTrace');
+        }
+      }
+      
+      // Ensure bookingId is in bookingData
+      final result = Map<String, dynamic>.from(bookingData);
+      if (bookingId != null && bookingId.isNotEmpty) {
+        result['id'] = bookingId;
+        result['bookingId'] = bookingId;
+        debugPrint('createBookingFromCart: Final bookingId: $bookingId');
+      } else {
+        debugPrint('createBookingFromCart: WARNING - No bookingId found!');
+      }
+      
+      // Step 2: Create payment authorization if requested
+      if (createPayment) {
+        if (bookingId != null && bookingId.isNotEmpty) {
+          try {
+            debugPrint('createBookingFromCart: Creating payment authorization for bookingId: $bookingId');
+            
+            // Wait a bit for backend to process the booking
+            // This helps avoid "Object reference not set" errors
+            await Future.delayed(const Duration(milliseconds: 1000));
+            
+            // Try to create payment authorization with retry logic
+            String? paymentId;
+            int maxRetries = 3;
+            int retryCount = 0;
+            
+            while (retryCount < maxRetries && paymentId == null) {
+              try {
+                paymentId = await createPaymentAuthorization(
+                  bookingId: bookingId,
+                  mode: 'Deposit', // Default mode is "Deposit"
+                );
+                debugPrint('createBookingFromCart: Payment authorization created: $paymentId');
+                break; // Success, exit retry loop
+              } catch (e) {
+                retryCount++;
+                final errorMsg = e.toString();
+                
+                // Don't retry for 400 errors (Invalid payment mode, etc.) - these are configuration errors
+                if (errorMsg.contains('Invalid payment mode') || 
+                    errorMsg.contains('Status: 400')) {
+                  debugPrint('createBookingFromCart: Payment authorization failed with configuration error, not retrying');
+                  rethrow;
+                }
+                
+                // If it's a 500 error with "Object reference not set", retry
+                if (errorMsg.contains('Object reference not set') && retryCount < maxRetries) {
+                  debugPrint('createBookingFromCart: Payment authorization failed (attempt $retryCount/$maxRetries), retrying...');
+                  // Exponential backoff: 1s, 2s, 4s
+                  await Future.delayed(Duration(milliseconds: 1000 * (1 << (retryCount - 1))));
+                  continue;
+                } else {
+                  // Other errors or max retries reached, throw
+                  rethrow;
+                }
+              }
+            }
+            
+            if (paymentId == null) {
+              throw Exception('Không thể tạo thanh toán sau $maxRetries lần thử. Vui lòng thử lại sau hoặc liên hệ hỗ trợ.');
+            }
+            
+            // Initialize PayOS payment if amount is provided
+            // PayOS is the primary payment method for this system
+            String? paymentUrl;
+            if (paymentAmount != null && paymentAmount > 0) {
+              debugPrint('createBookingFromCart: Initializing PayOS payment with amount: $paymentAmount');
+              try {
+                paymentUrl = await initializePayOSPayment(
+                  paymentId: paymentId,
+                  amount: paymentAmount,
+                  description: paymentDescription ?? 
+                            'Thanh toán đặt cọc cho đơn hàng $bookingId',
+                  returnUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=success',
+                  cancelUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=cancel',
+                );
+                debugPrint('createBookingFromCart: PayOS payment URL created: ${paymentUrl.isNotEmpty ? "yes" : "no"}');
+              } catch (e) {
+                debugPrint('createBookingFromCart: Failed to initialize PayOS payment: $e');
+                // Continue without payment URL - payment can still be processed later
+              }
+            }
+            
+            // Merge payment info into booking data
+            result['paymentId'] = paymentId;
+            if (paymentUrl != null && paymentUrl.isNotEmpty) {
+              result['paymentUrl'] = paymentUrl;
+              debugPrint('createBookingFromCart: Payment URL saved to bookingData: $paymentUrl');
+            } else {
+              debugPrint('createBookingFromCart: WARNING - Payment URL is empty or null');
+            }
+            debugPrint('createBookingFromCart: Returning booking data with payment info');
+            debugPrint('createBookingFromCart: Final bookingData keys: ${result.keys.toList()}');
+            return result;
+          } catch (e, stackTrace) {
+            // If payment creation fails, still return booking data
+            // but log the error
+            debugPrint('createBookingFromCart: Warning - Failed to create payment: $e');
+            debugPrint('createBookingFromCart: StackTrace: $stackTrace');
+            // Return booking data even if payment creation fails
+            return result;
+          }
+        } else {
+          debugPrint('createBookingFromCart: WARNING - Cannot create payment - bookingId is null or empty');
+          // Return booking data even without payment
+          return result;
+        }
+      }
+      
+      // Return booking data with bookingId if available
+      debugPrint('createBookingFromCart: Returning booking data without payment (createPayment=false)');
+      return result;
     } catch (e) {
       throw Exception('Failed to create booking from cart: ${e.toString()}');
     }
   }
   
   // Payment APIs
-  static Future<String> createPaymentAuthorization({
+  // Get payment URL directly from booking ID (simplified flow)
+  // This method combines createPaymentAuthorization + initializePayOSPayment
+  static Future<String> getPaymentUrlFromBookingId({
     required String bookingId,
+    String? mode,
+    required double amount,
+    String? description,
   }) async {
     try {
-      final requestBody = {'bookingId': bookingId};
+      debugPrint('getPaymentUrlFromBookingId: Getting payment URL for bookingId: $bookingId');
+      
+      // Step 1: Create payment authorization
+      final paymentId = await createPaymentAuthorization(
+        bookingId: bookingId,
+        mode: mode ?? 'Deposit',
+      );
+      
+      debugPrint('getPaymentUrlFromBookingId: Payment ID created: $paymentId');
+      
+      // Step 2: Initialize PayOS payment and get URL
+      final paymentUrl = await initializePayOSPayment(
+        paymentId: paymentId,
+        amount: amount,
+        description: description ?? 'Thanh toán đặt cọc cho đơn hàng $bookingId',
+        returnUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=success',
+        cancelUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=cancel',
+      );
+      
+      debugPrint('getPaymentUrlFromBookingId: Payment URL received: ${paymentUrl.isNotEmpty ? "yes" : "no"}');
+      if (paymentUrl.isNotEmpty) {
+        debugPrint('getPaymentUrlFromBookingId: Payment URL: $paymentUrl');
+      } else {
+        debugPrint('getPaymentUrlFromBookingId: WARNING - Payment URL is empty!');
+      }
+      return paymentUrl;
+    } catch (e) {
+      debugPrint('getPaymentUrlFromBookingId: Error: $e');
+      rethrow;
+    }
+  }
+
+  static Future<String> createPaymentAuthorization({
+    required String bookingId,
+    String? mode,
+  }) async {
+    try {
+      // Mode: Default to "Deposit" for deposit payments
+      final requestBody = <String, dynamic>{
+        'bookingId': bookingId,
+        'mode': mode ?? 'Deposit', // Default mode is "Deposit"
+      };
+      
+      debugPrint('createPaymentAuthorization: Using mode: ${requestBody['mode']}');
       
       debugPrint('Creating payment authorization for booking: $bookingId');
+      debugPrint('Request body: $requestBody');
       
       final response = await http.post(
         Uri.parse('$baseUrl/Payments/authorize'),
@@ -1154,113 +1637,66 @@ class ApiService {
         try {
           // API may return UUID string directly (as JSON string)
           final decoded = jsonDecode(body);
+          String? paymentId;
+          
           if (decoded is String) {
-            return decoded;
-          }
-          
-          // Or return as object with id field
-          if (decoded is Map<String, dynamic>) {
-            final id = decoded['id']?.toString() ?? 
+            paymentId = decoded;
+          } else if (decoded is Map<String, dynamic>) {
+            // Or return as object with id field
+            paymentId = decoded['id']?.toString() ?? 
                        decoded['paymentId']?.toString();
-            if (id != null && id.isNotEmpty) {
-              return id;
+            if (paymentId == null || paymentId.isEmpty) {
+              throw Exception('Payment ID not found in response');
             }
-            throw Exception('Payment ID not found in response');
+          } else {
+            // Fallback: return as string
+            paymentId = decoded.toString();
           }
           
-          // Fallback: return as string
-          return decoded.toString();
+          // Clean payment ID: remove surrounding quotes
+          paymentId = paymentId.replaceAll('"', '').replaceAll("'", '').trim();
+          debugPrint('createPaymentAuthorization: Cleaned payment ID: $paymentId');
+          return paymentId;
         } catch (e) {
           // If JSON decode fails, try using body as string directly
           // (in case API returns plain string without JSON encoding)
           final trimmedBody = body.trim();
+          String paymentId = trimmedBody;
+          
+          // Remove JSON string quotes if present
           if (trimmedBody.startsWith('"') && trimmedBody.endsWith('"')) {
-            // Remove JSON string quotes
-            return trimmedBody.substring(1, trimmedBody.length - 1);
+            paymentId = trimmedBody.substring(1, trimmedBody.length - 1);
           }
-          return trimmedBody;
+          
+          // Clean payment ID: remove any remaining quotes
+          paymentId = paymentId.replaceAll('"', '').replaceAll("'", '').trim();
+          debugPrint('createPaymentAuthorization: Cleaned payment ID from raw body: $paymentId');
+          return paymentId;
         }
       }
 
       final errorMsg = _extractErrorMessage(body);
       debugPrint('Payment authorization failed: $errorMsg');
-      throw Exception(
-        errorMsg ?? 
-        'Không thể tạo thanh toán (Status: $statusCode)',
-      );
+      
+      // Provide user-friendly error messages
+      String userFriendlyMsg;
+      if (statusCode == 500) {
+        if (errorMsg != null && errorMsg.contains('Object reference not set')) {
+          userFriendlyMsg = 'Booking chưa sẵn sàng để thanh toán. Vui lòng thử lại sau vài giây hoặc liên hệ hỗ trợ.';
+        } else {
+          userFriendlyMsg = 'Lỗi server khi tạo thanh toán. Vui lòng thử lại sau hoặc liên hệ hỗ trợ.';
+        }
+      } else if (statusCode == 404) {
+        userFriendlyMsg = 'Không tìm thấy booking. Vui lòng kiểm tra lại thông tin đặt lịch.';
+      } else if (statusCode == 400) {
+        userFriendlyMsg = errorMsg ?? 'Thông tin thanh toán không hợp lệ. Vui lòng kiểm tra lại.';
+      } else {
+        userFriendlyMsg = errorMsg ?? 'Không thể tạo thanh toán (Status: $statusCode)';
+      }
+      
+      throw Exception(userFriendlyMsg);
     } catch (e) {
       throw Exception('Failed to create payment authorization: ${e.toString()}');
-    }
-  }
-  
-  static Future<String> initializeVnPayPayment({
-    required String paymentId,
-    required double amount,
-    String? description,
-  }) async {
-    try {
-      final requestBody = {
-        'amount': amount,
-        if (description != null && description.isNotEmpty)
-          'description': description,
-      };
-      
-      debugPrint('Initializing VNPay payment for paymentId: $paymentId, amount: $amount');
-      
-      final response = await http.post(
-        Uri.parse('$baseUrl/Payments/$paymentId/vnpay'),
-        headers: await _getHeaders(requiresAuth: true),
-        body: jsonEncode(requestBody),
-      );
-
-      final statusCode = response.statusCode;
-      final body = response.body;
-
-      debugPrint('VNPay initialization response: Status $statusCode');
-      debugPrint('Response body: ${body.isNotEmpty ? (body.length > 500 ? "${body.substring(0, 500)}..." : body) : "empty"}');
-
-      if (statusCode >= 200 && statusCode < 300) {
-        if (body.isEmpty) {
-          throw Exception('Empty response from VNPay initialization');
-        }
-        
-        try {
-          // API may return payment URL string directly (as JSON string)
-          final decoded = jsonDecode(body);
-          if (decoded is String) {
-            return decoded;
-          }
-          
-          // Or return as object with url field
-          if (decoded is Map<String, dynamic>) {
-            return decoded['url']?.toString() ?? 
-                   decoded['paymentUrl']?.toString() ?? 
-                   decoded['vnpayUrl']?.toString() ?? 
-                   '';
-          }
-          
-          // Fallback: return as string
-          return decoded.toString();
-        } catch (e) {
-          // If JSON decode fails, try using body as string directly
-          // (in case API returns plain string without JSON encoding)
-          final trimmedBody = body.trim();
-          if (trimmedBody.startsWith('"') && trimmedBody.endsWith('"')) {
-            // Remove JSON string quotes
-            return trimmedBody.substring(1, trimmedBody.length - 1);
-          }
-          return trimmedBody;
-        }
-      }
-
-      final errorMsg = _extractErrorMessage(body);
-      debugPrint('VNPay initialization failed: $errorMsg');
-      throw Exception(
-        errorMsg ?? 
-        'Không thể khởi tạo thanh toán VNPay (Status: $statusCode)',
-      );
-    } catch (e) {
-      throw Exception('Failed to initialize VNPay payment: ${e.toString()}');
     }
   }
   
@@ -1292,6 +1728,11 @@ class ApiService {
     String? cancelUrl,
   }) async {
     try {
+      // Clean payment ID: remove surrounding quotes
+      final cleanedPaymentId = paymentId.replaceAll('"', '').replaceAll("'", '').trim();
+      debugPrint('initializePayOSPayment: Original paymentId: $paymentId');
+      debugPrint('initializePayOSPayment: Cleaned paymentId: $cleanedPaymentId');
+      
       final requestBody = {
         'amount': amount,
         'description': description ?? 'None',
@@ -1299,11 +1740,11 @@ class ApiService {
         'cancelUrl': cancelUrl ?? 'string',
       };
       
-      debugPrint('Initializing PayOS payment for paymentId: $paymentId, amount: $amount');
+      debugPrint('Initializing PayOS payment for paymentId: $cleanedPaymentId, amount: $amount');
       debugPrint('Request body: $requestBody');
       
       final response = await http.post(
-        Uri.parse('$baseUrl/Payments/$paymentId/payos'),
+        Uri.parse('$baseUrl/Payments/$cleanedPaymentId/payos'),
         headers: await _getHeaders(requiresAuth: true),
         body: jsonEncode(requestBody),
       );
@@ -1312,7 +1753,7 @@ class ApiService {
       final body = response.body;
 
       debugPrint('PayOS initialization response: Status $statusCode');
-      debugPrint('Response body: ${body.isNotEmpty ? (body.length > 500 ? "${body.substring(0, 500)}..." : body) : "empty"}');
+      debugPrint('Response body: ${body.isNotEmpty ? (body.length > 1000 ? "${body.substring(0, 1000)}..." : body) : "empty"}');
 
       if (statusCode >= 200 && statusCode < 300) {
         if (body.isEmpty) {
@@ -1322,35 +1763,131 @@ class ApiService {
         try {
           // API may return payment URL string directly (as JSON string)
           final decoded = jsonDecode(body);
+          debugPrint('initializePayOSPayment: Decoded type: ${decoded.runtimeType}');
+          
           if (decoded is String) {
-            return decoded;
+            final cleanedUrl = decoded.replaceAll('"', '').replaceAll("'", '').trim();
+            debugPrint('initializePayOSPayment: Found URL as string: $cleanedUrl');
+            return cleanedUrl;
           }
           
           // Or return as object with url field
           if (decoded is Map<String, dynamic>) {
-            return decoded['url']?.toString() ?? 
-                   decoded['paymentUrl']?.toString() ?? 
-                   decoded['payosUrl']?.toString() ?? 
-                   decoded['checkoutUrl']?.toString() ??
-                   '';
+            debugPrint('initializePayOSPayment: Decoded is Map, keys: ${decoded.keys.toList()}');
+            
+            // Try multiple possible field names for payment URL
+            final urlFields = [
+              'url',
+              'paymentUrl',
+              'payosUrl',
+              'checkoutUrl',
+              'payosCheckoutUrl',
+              'link',
+              'paymentLink',
+              'redirectUrl',
+              'redirect_url',
+              'checkout_url',
+              'payment_url',
+            ];
+            
+            for (final field in urlFields) {
+              final value = decoded[field];
+              if (value != null) {
+                final urlString = value.toString().replaceAll('"', '').replaceAll("'", '').trim();
+                if (urlString.isNotEmpty && (urlString.startsWith('http://') || urlString.startsWith('https://'))) {
+                  debugPrint('initializePayOSPayment: Found URL in field "$field": $urlString');
+                  return urlString;
+                }
+              }
+            }
+            
+            // Log all values for debugging
+            debugPrint('initializePayOSPayment: No valid URL found. All values:');
+            decoded.forEach((key, value) {
+              debugPrint('  $key: ${value.toString().length > 100 ? "${value.toString().substring(0, 100)}..." : value}');
+            });
+            
+            return '';
           }
           
           // Fallback: return as string
-          return decoded.toString();
+          final urlString = decoded.toString().replaceAll('"', '').replaceAll("'", '').trim();
+          debugPrint('initializePayOSPayment: Using decoded as string: $urlString');
+          return urlString;
         } catch (e) {
+          debugPrint('initializePayOSPayment: JSON decode error: $e');
           // If JSON decode fails, try using body as string directly
           // (in case API returns plain string without JSON encoding)
           final trimmedBody = body.trim();
+          debugPrint('initializePayOSPayment: Trying body as string: $trimmedBody');
+          
           if (trimmedBody.startsWith('"') && trimmedBody.endsWith('"')) {
             // Remove JSON string quotes
-            return trimmedBody.substring(1, trimmedBody.length - 1);
+            final urlString = trimmedBody.substring(1, trimmedBody.length - 1).replaceAll('"', '').replaceAll("'", '').trim();
+            debugPrint('initializePayOSPayment: Extracted URL from quoted string: $urlString');
+            return urlString;
           }
-          return trimmedBody;
+          
+          final cleanedBody = trimmedBody.replaceAll('"', '').replaceAll("'", '').trim();
+          debugPrint('initializePayOSPayment: Using trimmed body: $cleanedBody');
+          return cleanedBody;
         }
       }
 
       final errorMsg = _extractErrorMessage(body);
       debugPrint('PayOS initialization failed: $errorMsg');
+      
+      // Check if payment already exists
+      if (statusCode == 500 && errorMsg != null && 
+          (errorMsg.contains('Đơn thanh toán đã tồn tại') || 
+           errorMsg.contains('đã tồn tại') ||
+           errorMsg.toLowerCase().contains('already exists'))) {
+        debugPrint('initializePayOSPayment: Payment already exists for paymentId: $cleanedPaymentId');
+        debugPrint('initializePayOSPayment: Attempting to get existing payment URL...');
+        
+        // Try to get existing payment URL from payment details
+        try {
+          final paymentResponse = await http.get(
+            Uri.parse('$baseUrl/Payments/$cleanedPaymentId'),
+            headers: await _getHeaders(requiresAuth: true),
+          );
+          
+          debugPrint('initializePayOSPayment: GET payment response status: ${paymentResponse.statusCode}');
+          
+          if (paymentResponse.statusCode >= 200 && paymentResponse.statusCode < 300) {
+            final paymentData = jsonDecode(paymentResponse.body);
+            debugPrint('initializePayOSPayment: Payment data keys: ${paymentData is Map<String, dynamic> ? paymentData.keys.toList() : "not a map"}');
+            
+            if (paymentData is Map<String, dynamic>) {
+              // Try to find payment URL in various possible fields
+              final existingUrl = paymentData['url']?.toString() ?? 
+                                 paymentData['paymentUrl']?.toString() ?? 
+                                 paymentData['payosUrl']?.toString() ??
+                                 paymentData['checkoutUrl']?.toString() ??
+                                 paymentData['payosCheckoutUrl']?.toString() ??
+                                 paymentData['link']?.toString() ??
+                                 paymentData['paymentLink']?.toString();
+              
+              if (existingUrl != null && existingUrl.isNotEmpty) {
+                final cleanedUrl = existingUrl.replaceAll('"', '').replaceAll("'", '').trim();
+                debugPrint('initializePayOSPayment: Found existing payment URL: $cleanedUrl');
+                return cleanedUrl;
+              } else {
+                debugPrint('initializePayOSPayment: No URL found in payment data');
+                debugPrint('initializePayOSPayment: Payment data sample: ${paymentData.toString().substring(0, paymentData.toString().length > 500 ? 500 : paymentData.toString().length)}');
+              }
+            }
+          } else {
+            debugPrint('initializePayOSPayment: Failed to get payment info, status: ${paymentResponse.statusCode}');
+            debugPrint('initializePayOSPayment: Response body: ${paymentResponse.body.substring(0, paymentResponse.body.length > 200 ? 200 : paymentResponse.body.length)}');
+          }
+        } catch (e) {
+          debugPrint('initializePayOSPayment: Error getting existing payment: $e');
+        }
+        
+        // If we can't get URL, throw a specific error
+        throw Exception('Đơn thanh toán đã tồn tại. Vui lòng kiểm tra email hoặc liên hệ hỗ trợ để lấy liên kết thanh toán.');
+      }
       
       // Check for specific error types and provide user-friendly messages
       String userFriendlyMsg;
@@ -1378,6 +1915,217 @@ class ApiService {
         rethrow;
       }
       throw Exception('Không thể khởi tạo thanh toán PayOS: ${e.toString().replaceFirst('Exception: ', '')}');
+    }
+  }
+
+  // Staff Booking APIs
+  // Get booking statuses
+  static Future<List<Map<String, dynamic>>> getBookingStatuses() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/Bookings/GetBookingStatus'),
+        headers: await _getHeaders(requiresAuth: true, includeContentType: false),
+      );
+
+      final statusCode = response.statusCode;
+      final body = response.body;
+
+      debugPrint('getBookingStatuses: Response status: $statusCode');
+      debugPrint('getBookingStatuses: Response body: ${body.length > 500 ? "${body.substring(0, 500)}..." : body}');
+
+      if (statusCode >= 200 && statusCode < 300) {
+        final decoded = jsonDecode(body);
+        if (decoded is List) {
+          return decoded.cast<Map<String, dynamic>>();
+        } else if (decoded is Map<String, dynamic>) {
+          // Try to extract list from common keys
+          const keys = ['items', 'data', 'results', 'value', 'statuses'];
+          for (final key in keys) {
+            if (decoded.containsKey(key) && decoded[key] is List) {
+              return (decoded[key] as List).cast<Map<String, dynamic>>();
+            }
+          }
+        }
+        throw Exception('Invalid response format from getBookingStatuses');
+      }
+
+      final errorMsg = _extractErrorMessage(body);
+      throw Exception(errorMsg ?? 'Failed to get booking statuses (Status: $statusCode)');
+    } catch (e) {
+      debugPrint('Error fetching booking statuses: $e');
+      throw Exception('Failed to fetch booking statuses: ${e.toString()}');
+    }
+  }
+
+  // Get staff bookings
+  static Future<List<dynamic>> getStaffBookings() async {
+    try {
+      final token = await _getToken();
+      if (token == null || token.isEmpty) {
+        debugPrint('getStaffBookings: No token found, user not authenticated');
+        throw Exception('Chưa đăng nhập. Vui lòng đăng nhập lại.');
+      }
+
+      final endpoint = '$baseUrl/Bookings/staffbookings';
+      debugPrint('getStaffBookings: Calling endpoint: $endpoint');
+
+      final response = await http.get(
+        Uri.parse(endpoint),
+        headers: await _getHeaders(requiresAuth: true, includeContentType: false),
+      );
+
+      final statusCode = response.statusCode;
+      final body = response.body;
+
+      debugPrint('getStaffBookings response - Status: $statusCode');
+      debugPrint('getStaffBookings response body (first 500 chars): ${body.length > 500 ? "${body.substring(0, 500)}..." : body}');
+
+      if (statusCode == 401) {
+        debugPrint('getStaffBookings: 401 Unauthorized - token may be invalid or expired');
+        throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+      }
+
+      if (statusCode >= 200 && statusCode < 300) {
+        if (body.isEmpty || body.trim() == '[]') {
+          debugPrint('getStaffBookings: Empty response body');
+          return [];
+        }
+
+        try {
+          final decoded = jsonDecode(body);
+          debugPrint('getStaffBookings: Decoded type: ${decoded.runtimeType}');
+
+          if (decoded is List) {
+            final bookingsList = decoded;
+            debugPrint('getStaffBookings: Found ${bookingsList.length} bookings');
+            if (bookingsList.isNotEmpty) {
+              debugPrint('getStaffBookings: First item type: ${bookingsList.first.runtimeType}');
+              debugPrint('getStaffBookings: First item keys: ${bookingsList.first is Map ? (bookingsList.first as Map).keys.toList() : "Not a Map"}');
+            }
+            return bookingsList;
+          } else if (decoded is Map<String, dynamic>) {
+            // Try to extract list from common keys
+            const keys = ['items', 'data', 'results', 'value', 'bookings'];
+            for (final key in keys) {
+              if (decoded.containsKey(key) && decoded[key] is List) {
+                return decoded[key] as List;
+              }
+            }
+          }
+
+          debugPrint('getStaffBookings: No bookings found in decoded response. Full decoded: $decoded');
+          return [];
+        } catch (e, stackTrace) {
+          debugPrint('getStaffBookings: JSON decode error: $e');
+          debugPrint('getStaffBookings: StackTrace: $stackTrace');
+          debugPrint('getStaffBookings: Response body that failed to parse: ${body.substring(0, body.length > 1000 ? 1000 : body.length)}');
+          throw Exception('Lỗi phân tích dữ liệu từ server');
+        }
+      }
+
+      final errorMsg = _extractErrorMessage(body);
+      debugPrint('getStaffBookings: Error $statusCode - $errorMsg');
+      throw Exception(errorMsg ?? 'Failed to load staff bookings (Status: $statusCode)');
+    } catch (e) {
+      debugPrint('getStaffBookings: Exception - ${e.toString()}');
+      if (e.toString().contains('Exception:')) {
+        rethrow;
+      }
+      throw Exception('Failed to fetch staff bookings: ${e.toString()}');
+    }
+  }
+
+  // Get booking by QR code (booking ID)
+  static Future<Map<String, dynamic>> getBookingByQr(String bookingId) async {
+    try {
+      final cleanedId = bookingId.replaceAll('"', '').replaceAll("'", '').trim();
+      debugPrint('getBookingByQr: Getting booking with ID: $cleanedId');
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/Bookings/$cleanedId'),
+        headers: await _getHeaders(requiresAuth: true, includeContentType: false),
+      );
+
+      final statusCode = response.statusCode;
+      final body = response.body;
+
+      debugPrint('getBookingByQr: Response status: $statusCode');
+      debugPrint('getBookingByQr: Response body (first 500 chars): ${body.length > 500 ? "${body.substring(0, 500)}..." : body}');
+
+      if (statusCode == 404) {
+        throw Exception('Không tìm thấy đơn đặt lịch với mã: $cleanedId');
+      }
+
+      if (statusCode == 401) {
+        throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+      }
+
+      if (statusCode >= 200 && statusCode < 300) {
+        return _handleResponse(response);
+      }
+
+      final errorMsg = _extractErrorMessage(body);
+      throw Exception(errorMsg ?? 'Failed to get booking (Status: $statusCode)');
+    } catch (e) {
+      debugPrint('Error fetching booking by QR: $e');
+      if (e.toString().contains('Exception:')) {
+        rethrow;
+      }
+      throw Exception('Failed to fetch booking: ${e.toString()}');
+    }
+  }
+
+  // Update booking status (isConfirm)
+  static Future<Map<String, dynamic>> updateBookingStatus({
+    required String bookingId,
+    required bool isConfirm,
+    String? status,
+  }) async {
+    try {
+      final cleanedId = bookingId.replaceAll('"', '').replaceAll("'", '').trim();
+      debugPrint('updateBookingStatus: Updating booking $cleanedId with isConfirm: $isConfirm, status: $status');
+
+      final requestBody = <String, dynamic>{
+        'isConfirm': isConfirm,
+      };
+      
+      if (status != null && status.isNotEmpty) {
+        requestBody['status'] = status;
+      }
+
+      debugPrint('updateBookingStatus: Request body: $requestBody');
+
+      final response = await http.put(
+        Uri.parse('$baseUrl/Bookings/$cleanedId/update-status'),
+        headers: await _getHeaders(requiresAuth: true),
+        body: jsonEncode(requestBody),
+      );
+
+      final statusCode = response.statusCode;
+      final body = response.body;
+
+      debugPrint('updateBookingStatus: Response status: $statusCode');
+      debugPrint('updateBookingStatus: Response body: ${body.length > 500 ? "${body.substring(0, 500)}..." : body}');
+
+      if (statusCode >= 200 && statusCode < 300) {
+        if (body.isEmpty) {
+          return {'success': true, 'message': 'Cập nhật trạng thái thành công'};
+        }
+        try {
+          return _handleResponse(response);
+        } catch (e) {
+          return {'success': true, 'message': 'Cập nhật trạng thái thành công'};
+        }
+      }
+
+      final errorMsg = _extractErrorMessage(body);
+      throw Exception(errorMsg ?? 'Failed to update booking status (Status: $statusCode)');
+    } catch (e) {
+      debugPrint('Error updating booking status: $e');
+      if (e.toString().contains('Exception:')) {
+        rethrow;
+      }
+      throw Exception('Failed to update booking status: ${e.toString()}');
     }
   }
 
@@ -1426,13 +2174,16 @@ class ApiService {
         throw Exception('Vui lòng đăng nhập để xem lịch sử đặt lịch');
       }
 
-      debugPrint('getBookings: Calling endpoint /Bookings/renterbookings');
+      final endpoint = '$baseUrl/Bookings/renterbookings';
+      debugPrint('getBookings: Calling endpoint: $endpoint');
       
       // Use /Bookings/renterbookings endpoint to get renter's booking history
       http.Response response = await http.get(
-        Uri.parse('$baseUrl/Bookings/renterbookings'),
+        Uri.parse(endpoint),
         headers: await _getHeaders(requiresAuth: true, includeContentType: false),
       );
+      
+      debugPrint('getBookings: Full URL called: ${response.request?.url}');
 
       // If 404, try alternative endpoint
       if (response.statusCode == 404) {
@@ -1469,33 +2220,18 @@ class ApiService {
         try {
           final decoded = jsonDecode(body);
           debugPrint('getBookings: Decoded type: ${decoded.runtimeType}');
-          
-          // API trả về array trực tiếp
-          if (decoded is List) {
-            debugPrint('getBookings: Found ${decoded.length} bookings in array');
-            if (decoded.isNotEmpty) {
-              debugPrint('getBookings: First item type: ${decoded.first.runtimeType}');
-              debugPrint('getBookings: First item keys: ${decoded.first is Map ? (decoded.first as Map).keys.toList() : "Not a Map"}');
+          final bookingsList = _findBookingList(decoded);
+
+          if (bookingsList != null) {
+            debugPrint('getBookings: Found ${bookingsList.length} bookings');
+            if (bookingsList.isNotEmpty) {
+              debugPrint('getBookings: First item type: ${bookingsList.first.runtimeType}');
+              debugPrint('getBookings: First item keys: ${bookingsList.first is Map ? (bookingsList.first as Map).keys.toList() : "Not a Map"}');
             }
-            return decoded;
+            return bookingsList;
           }
-          // Hoặc trong object
-          if (decoded is Map<String, dynamic>) {
-            debugPrint('getBookings: Response is Map with keys: ${decoded.keys.toList()}');
-            final list =
-                decoded['data'] ?? decoded['bookings'] ?? decoded['items'] ?? decoded['result'];
-            if (list is List) {
-              debugPrint('getBookings: Found ${list.length} bookings in object');
-              if (list.isNotEmpty) {
-                debugPrint('getBookings: First item type: ${list.first.runtimeType}');
-                debugPrint('getBookings: First item keys: ${list.first is Map ? (list.first as Map).keys.toList() : "Not a Map"}');
-              }
-              return list;
-            } else if (list != null) {
-              debugPrint('getBookings: Found non-list data: ${list.runtimeType}');
-            }
-          }
-          debugPrint('getBookings: No bookings found in response. Full decoded: $decoded');
+
+          debugPrint('getBookings: No bookings found in decoded response. Full decoded: $decoded');
           return [];
         } catch (e, stackTrace) {
           debugPrint('getBookings: JSON decode error: $e');
@@ -1524,24 +2260,95 @@ class ApiService {
     }
   }
 
-  // Get bookings for a specific camera to check availability
-  static Future<List<Map<String, dynamic>>> getCameraBookings(String cameraId) async {
+  static List<dynamic>? _findBookingList(dynamic decoded) {
+    if (decoded == null) return null;
+
+    if (decoded is List) {
+      return decoded;
+    }
+
+    if (decoded is Map<String, dynamic>) {
+      const keysToCheck = [
+        'items',
+        'bookings',
+        'data',
+        'result',
+        'payload',
+        'cart',
+        'bookingCart',
+        'value',
+      ];
+
+      for (final key in keysToCheck) {
+        final next = decoded[key];
+        final candidate = _findBookingList(next);
+        if (candidate != null) {
+          return candidate;
+        }
+      }
+
+      // Some responses wrap list inside other maps
+      for (final value in decoded.values) {
+        final candidate = _findBookingList(value);
+        if (candidate != null) {
+          return candidate;
+        }
+      }
+    }
+
+    if (decoded is Iterable) {
+      for (final item in decoded) {
+        final candidate = _findBookingList(item);
+        if (candidate != null) {
+          return candidate;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  // Get bookings for a specific item (camera or accessory) to check availability
+  static Future<List<Map<String, dynamic>>> getItemBookings(String itemId) async {
     try {
-      final allBookings = await getBookings();
-      final cameraBookings = <Map<String, dynamic>>[];
+      // Try to get all bookings (both renter and staff if available)
+      List<dynamic> allBookings = [];
+      try {
+        allBookings = await getBookings();
+      } catch (e) {
+        debugPrint('getItemBookings: Error getting renter bookings: $e');
+      }
+      
+      // Try to get staff bookings if available (for more comprehensive availability check)
+      try {
+        final staffBookings = await getStaffBookings();
+        allBookings.addAll(staffBookings);
+      } catch (e) {
+        debugPrint('getItemBookings: Error getting staff bookings (may not be staff): $e');
+      }
+
+      final itemBookings = <Map<String, dynamic>>[];
 
       for (final booking in allBookings) {
         if (booking is! Map<String, dynamic>) continue;
         
-        // Check if booking contains this camera
+        // Skip cancelled bookings
+        final status = booking['status']?.toString().toLowerCase();
+        if (status == 'cancelled' || status == 'cancelled') {
+          continue;
+        }
+        
+        // Check if booking contains this item
         final items = booking['items'] as List<dynamic>?;
         if (items != null) {
           for (final item in items) {
             if (item is Map<String, dynamic>) {
-              final itemCameraId = item['cameraId']?.toString() ?? 
-                                  item['itemId']?.toString();
-              if (itemCameraId == cameraId) {
-                cameraBookings.add(booking);
+              final itemIdFromBooking = item['cameraId']?.toString() ?? 
+                                        item['itemId']?.toString() ??
+                                        item['accessoryId']?.toString() ??
+                                        item['id']?.toString();
+              if (itemIdFromBooking == itemId) {
+                itemBookings.add(booking);
                 break;
               }
             }
@@ -1549,11 +2356,40 @@ class ApiService {
         }
       }
 
-      return cameraBookings;
+      // Sort by pickup date
+      itemBookings.sort((a, b) {
+        final pickupA = _parseDateTime(a['pickupAt']);
+        final pickupB = _parseDateTime(b['pickupAt']);
+        if (pickupA == null && pickupB == null) return 0;
+        if (pickupA == null) return 1;
+        if (pickupB == null) return -1;
+        return pickupA.compareTo(pickupB);
+      });
+
+      return itemBookings;
     } catch (e) {
-      debugPrint('Error fetching camera bookings: $e');
+      debugPrint('Error fetching item bookings: $e');
       return [];
     }
+  }
+
+  // Helper to parse DateTime from various formats
+  static DateTime? _parseDateTime(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is String) {
+      try {
+        return DateTime.parse(value);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  // Legacy method name for backward compatibility
+  static Future<List<Map<String, dynamic>>> getCameraBookings(String cameraId) async {
+    return getItemBookings(cameraId);
   }
 
   static Future<Map<String, dynamic>> getBookingById(String id) async {
@@ -1615,7 +2451,7 @@ class ApiService {
       debugPrint('Error fetching profile: $e');
       // Re-throw with user-friendly message if it's already an Exception
       if (e is Exception) {
-        throw e;
+        rethrow;
       }
       throw Exception('Failed to fetch profile: ${e.toString()}');
     }

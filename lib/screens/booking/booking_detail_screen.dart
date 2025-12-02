@@ -56,7 +56,10 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
       
       final returnUrl = 'https://camrent-app.com/payment/success';
       final cancelUrl = 'https://camrent-app.com/payment/cancel';
-      final description = 'Thanh toán đơn hàng ${booking.id.substring(0, 8)}...';
+      final bookingIdShort = booking.id.length >= 8 
+          ? booking.id.substring(0, 8) 
+          : booking.id;
+      final description = 'Thanh toán đơn hàng $bookingIdShort...';
 
       final paymentUrl = await ApiService.initializePayOSPayment(
         paymentId: paymentId,

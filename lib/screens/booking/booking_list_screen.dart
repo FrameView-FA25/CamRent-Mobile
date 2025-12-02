@@ -1,32 +1,30 @@
 import 'package:flutter/material.dart';
 
 import '../../models/booking_cart_item.dart';
-import '../../models/booking_model.dart';
 import '../../models/camera_model.dart';
 import '../../services/api_service.dart';
-import 'booking_detail_screen.dart';
+import 'booking_history_screen.dart';
 import '../camera/camera_detail_screen.dart';
 import '../../checkout/checkout_screen.dart';
 
 class BookingListScreen extends StatefulWidget {
-  const BookingListScreen({super.key});
+  final int initialTabIndex;
+
+  const BookingListScreen({
+    super.key,
+    this.initialTabIndex = 0,
+  });
 
   @override
   State<BookingListScreen> createState() => _BookingListScreenState();
 }
 
-class _BookingListScreenState extends State<BookingListScreen>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
-
+class _BookingListScreenState extends State<BookingListScreen> {
   bool _isCartLoading = true;
-  bool _isHistoryLoading = true;
 
   String? _cartError;
-  String? _historyError;
 
   List<BookingCartItem> _cartItems = const [];
-  List<BookingModel> _historyItems = const [];
 
   double _totalAmount = 0;
   double _depositAmount = 0;
@@ -34,20 +32,19 @@ class _BookingListScreenState extends State<BookingListScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(() {
-      if (mounted) {
-        setState(() {});
-      }
-    });
     _loadCart();
-    _loadHistory();
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
+  // Reload cart when screen becomes visible
+  // This is called when navigating to this screen
+  void reloadCart() {
+    debugPrint('BookingListScreen: reloadCart() called, mounted: $mounted');
+    if (mounted) {
+      debugPrint('BookingListScreen: Calling _loadCart()');
+      _loadCart();
+    } else {
+      debugPrint('BookingListScreen: WARNING - Cannot reload cart, widget not mounted');
+    }
   }
 
   Future<void> _loadCart() async {
@@ -58,6 +55,13 @@ class _BookingListScreenState extends State<BookingListScreen>
 
     try {
       final data = await ApiService.getBookingCart();
+      
+      // Log raw data from API
+      debugPrint('_loadCart: Raw data from API: $data');
+      debugPrint('_loadCart: Data keys: ${data.keys.toList()}');
+      debugPrint('_loadCart: Data["items"] type: ${data['items']?.runtimeType}');
+      debugPrint('_loadCart: Data["items"] value: ${data['items']}');
+      
       final items = _extractItems(data);
       final totals = _extractTotals(data, items);
 
@@ -76,12 +80,20 @@ class _BookingListScreenState extends State<BookingListScreen>
       }
 
       if (!mounted) return;
+      
+      // Log state before update
+      debugPrint('_loadCart: Before setState - current items: ${_cartItems.length}, new items: ${items.length}');
+      debugPrint('_loadCart: Setting state with ${items.length} items');
+      
       setState(() {
         _cartItems = items;
         _totalAmount = totals.$1;
         _depositAmount = totals.$2;
         _isCartLoading = false;
       });
+      
+      // Log state after update
+      debugPrint('_loadCart: After setState - items: ${_cartItems.length}, isLoading: $_isCartLoading');
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -91,97 +103,99 @@ class _BookingListScreenState extends State<BookingListScreen>
     }
   }
 
-  Future<void> _loadHistory() async {
-    setState(() {
-      _isHistoryLoading = true;
-      _historyError = null;
-    });
-
-    try {
-      debugPrint('_loadHistory: Starting to load booking history...');
-      final data = await ApiService.getBookings();
-      debugPrint('_loadHistory: Received ${data.length} items from API');
-      debugPrint('_loadHistory: Data type: ${data.runtimeType}');
-      
-      if (data.isEmpty) {
-        debugPrint('_loadHistory: No bookings returned from API');
-        if (!mounted) return;
-        setState(() {
-          _historyItems = [];
-          _isHistoryLoading = false;
-          _historyError = null;
-        });
-        return;
-      }
-      
-      final bookings = <BookingModel>[];
-      for (int i = 0; i < data.length; i++) {
-        final item = data[i];
-        debugPrint('_loadHistory: Processing item $i - type: ${item.runtimeType}');
-        
-        if (item is Map<String, dynamic>) {
-          debugPrint('_loadHistory: Item $i keys: ${item.keys.toList()}');
-          try {
-            final booking = BookingModel.fromJson(item);
-            debugPrint('_loadHistory: Parsed booking $i - id: ${booking.id}, status: ${booking.status}, statusText: ${booking.statusText}');
-            debugPrint('_loadHistory: Booking $i - pickupAt: ${booking.pickupAt}, returnAt: ${booking.returnAt}');
-            debugPrint('_loadHistory: Booking $i - totalPrice: ${booking.totalPrice}, items: ${booking.items.length}');
-            debugPrint('_loadHistory: Booking $i - cameraName: ${booking.cameraName}');
-            bookings.add(booking);
-          } catch (e, stackTrace) {
-            debugPrint('_loadHistory: Error parsing booking $i: $e');
-            debugPrint('_loadHistory: StackTrace: $stackTrace');
-            debugPrint('_loadHistory: Item data: $item');
-            // Continue parsing other items even if one fails
-          }
-        } else {
-          debugPrint('_loadHistory: Item $i is not a Map: ${item.runtimeType}, value: $item');
-        }
-      }
-
-      debugPrint('_loadHistory: Successfully parsed ${bookings.length} out of ${data.length} bookings');
-
-      if (!mounted) {
-        debugPrint('_loadHistory: Widget not mounted, skipping setState');
-        return;
-      }
-      
-      setState(() {
-        _historyItems = bookings;
-        _isHistoryLoading = false;
-        _historyError = null;
-      });
-      
-      debugPrint('_loadHistory: Updated UI with ${_historyItems.length} bookings');
-    } catch (e, stackTrace) {
-      debugPrint('_loadHistory: Exception: $e');
-      debugPrint('_loadHistory: StackTrace: $stackTrace');
-      if (!mounted) return;
-      setState(() {
-        _historyError = e.toString().replaceFirst('Exception: ', '');
-        _isHistoryLoading = false;
-      });
-    }
+  void _navigateToBookingHistory() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const BookingHistoryScreen(),
+      ),
+    );
   }
 
   List<BookingCartItem> _extractItems(Map<String, dynamic> data) {
+    debugPrint('_extractItems: Starting extraction...');
+    debugPrint('_extractItems: Data keys: ${data.keys.toList()}');
+    
     final candidates = [
       data['items'],
       data['cartItems'],
+      data['cartItemsList'],
+      data['bookingItems'],
       if (data['data'] is List) data['data'],
       if (data['data'] is Map<String, dynamic>)
         (data['data'] as Map<String, dynamic>)['items'],
+      if (data['data'] is Map<String, dynamic>)
+        (data['data'] as Map<String, dynamic>)['cartItems'],
     ];
 
-    for (final candidate in candidates) {
+    debugPrint('_extractItems: Checking ${candidates.length} candidates...');
+    for (int i = 0; i < candidates.length; i++) {
+      final candidate = candidates[i];
+      debugPrint('_extractItems: Candidate $i: ${candidate.runtimeType}');
       if (candidate is List) {
-        return candidate
+        debugPrint('_extractItems: Found list with ${candidate.length} items');
+        if (candidate.isEmpty) {
+          debugPrint('_extractItems: List is empty');
+          continue;
+        }
+        debugPrint('_extractItems: First item type: ${candidate.first.runtimeType}');
+        try {
+          final items = candidate
             .whereType<Map<String, dynamic>>()
-            .map(BookingCartItem.fromJson)
+              .map((item) {
+                debugPrint('_extractItems: Parsing item: ${item.keys.toList()}');
+                try {
+                  final cartItem = BookingCartItem.fromJson(item);
+                  // Check if item has minimal required info
+                  if (cartItem.cameraId.isEmpty && cartItem.cameraName == 'Máy ảnh') {
+                    debugPrint('_extractItems: WARNING - Item parsed but missing camera info. This might indicate a date conflict.');
+                    debugPrint('_extractItems: Item raw data: $item');
+                  }
+                  return cartItem;
+                } catch (e, stackTrace) {
+                  debugPrint('_extractItems: Error parsing item: $e');
+                  debugPrint('_extractItems: StackTrace: $stackTrace');
+                  debugPrint('_extractItems: Item data: $item');
+                  // Don't rethrow - continue with other items
+                  // Skip this item instead of creating placeholder
+                  debugPrint('_extractItems: Skipping item due to parse error');
+                  return null; // Return null to filter out later
+                }
+              })
+              .whereType<BookingCartItem>() // Filter out null items
             .toList();
+          
+          // Log before filtering by id
+          debugPrint('_extractItems: Parsed ${items.length} items before id filter');
+          for (var i = 0; i < items.length; i++) {
+            final item = items[i];
+            debugPrint('_extractItems: Item $i - id: "${item.id}", cameraId: "${item.cameraId}", cameraName: "${item.cameraName}"');
+          }
+          
+          // Filter out items with empty id, but allow items with valid cameraId even if id is empty
+          final validItems = items.where((item) {
+            final hasValidId = item.id.isNotEmpty;
+            final hasValidCameraId = item.cameraId.isNotEmpty;
+            final isValid = hasValidId || hasValidCameraId;
+            if (!isValid) {
+              debugPrint('_extractItems: Filtering out item - id: "${item.id}", cameraId: "${item.cameraId}", cameraName: "${item.cameraName}"');
+            }
+            return isValid;
+          }).toList();
+          
+          debugPrint('_extractItems: After filter: ${validItems.length} items (from ${items.length} parsed)');
+          if (validItems.length < items.length) {
+            debugPrint('_extractItems: WARNING - ${items.length - validItems.length} items were filtered out');
+          }
+          
+          return validItems;
+        } catch (e) {
+          debugPrint('_extractItems: Error parsing items from candidate $i: $e');
+          // Continue to next candidate
+        }
       }
     }
 
+    debugPrint('_extractItems: WARNING - No valid items found! Returning empty list.');
     return const [];
   }
 
@@ -549,72 +563,7 @@ class _BookingListScreenState extends State<BookingListScreen>
     return '$start → $end';
   }
 
-  String _formatHistoryRange(BookingModel booking) {
-    final start = _formatDate(booking.startDate);
-    final end = _formatDate(booking.endDate);
-    return '$start → $end';
-  }
 
-  String _formatDateTime(DateTime? date) {
-    if (date == null) return 'Chưa có thông tin';
-    final hour = date.hour.toString().padLeft(2, '0');
-    final minute = date.minute.toString().padLeft(2, '0');
-    return '${_formatDate(date)} · $hour:$minute';
-  }
-
-  Widget _buildHistoryInfoBlock({
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
-    final displayValue = value.isNotEmpty ? value : 'Không có thông tin';
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 16, color: Colors.grey[500]),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey[500],
-                  letterSpacing: 0.3,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            displayValue,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _statusColor(int status) {
-    switch (status) {
-      case 0:
-        return Colors.orange; // Chờ xử lý
-      case 1:
-        return Colors.blue; // Đã xác nhận
-      case 2:
-        return Colors.green; // Đang thuê
-      case 3:
-        return Colors.grey; // Đã trả
-      case 4:
-        return Colors.red; // Đã hủy
-      default:
-        return Colors.grey;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -665,7 +614,7 @@ class _BookingListScreenState extends State<BookingListScreen>
                           ),
                           SizedBox(height: 4),
                           Text(
-                            'Quản lý giỏ hàng và lịch sử đặt lịch',
+                            'Quản lý giỏ hàng',
                             style: TextStyle(fontSize: 14, color: Colors.grey),
                           ),
                         ],
@@ -674,66 +623,16 @@ class _BookingListScreenState extends State<BookingListScreen>
                   ],
                 ),
               ),
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: TabBar(
-                  controller: _tabController,
-                  indicator: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.primary.withOpacity(0.12),
-                  ),
-                  labelColor: Theme.of(context).colorScheme.primary,
-                  unselectedLabelColor: Colors.grey[600],
-                  tabs: [
-                    Tab(
-                      icon: Icon(
-                        Icons.shopping_cart,
-                        color:
-                            _tabController.index == 0
-                                ? Theme.of(context).colorScheme.primary
-                                : Colors.grey[600],
-                      ),
-                      text: 'Giỏ hàng',
-                    ),
-                    Tab(
-                      icon: Icon(
-                        Icons.history,
-                        color:
-                            _tabController.index == 1
-                                ? Theme.of(context).colorScheme.primary
-                                : Colors.grey[600],
-                      ),
-                      text: 'Lịch sử',
-                    ),
-                  ],
-                ),
-              ),
               const SizedBox(height: 16),
               Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [_buildCartTab(context), _buildHistoryTab(context)],
-                ),
+                child: _buildCartTab(context),
               ),
             ],
           ),
         ),
       ),
       bottomNavigationBar:
-          _tabController.index == 0 && _cartItems.isNotEmpty
+          _cartItems.isNotEmpty
               ? SafeArea(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -813,13 +712,12 @@ class _BookingListScreenState extends State<BookingListScreen>
                                     ).then((_) {
                                       // Reload cart sau khi quay lại
                                       _loadCart();
-                                      _loadHistory();
                                     });
                                   }
                                 : null,
                         icon: const Icon(Icons.payment),
                         label: const Text(
-                          'Thanh toán',
+                          'Đặt lịch thuê',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -835,15 +733,64 @@ class _BookingListScreenState extends State<BookingListScreen>
                           ),
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: _navigateToBookingHistory,
+                        icon: const Icon(Icons.history),
+                        label: const Text('Lịch sử đặt lịch'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Theme.of(context).colorScheme.primary,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          side: BorderSide(
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
               )
-              : null,
+              : SafeArea(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, -4),
+                      ),
+                    ],
+                  ),
+                  child: ElevatedButton.icon(
+                    onPressed: _navigateToBookingHistory,
+                    icon: const Icon(Icons.history),
+                    label: const Text('Lịch sử đặt lịch'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
     );
   }
 
   Widget _buildCartTab(BuildContext context) {
+    // Debug logging
+    debugPrint('_buildCartTab: isLoading: $_isCartLoading, error: $_cartError, items: ${_cartItems.length}');
+    
     if (_isCartLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -934,14 +881,34 @@ class _BookingListScreenState extends State<BookingListScreen>
       );
     }
 
+    debugPrint('_buildCartTab: Building ListView with ${_cartItems.length} items');
+    
+    if (_cartItems.isEmpty) {
+      debugPrint('_buildCartTab: WARNING - Items list is empty, but should not reach here!');
+      return const SizedBox.shrink();
+    }
+
     return RefreshIndicator(
       onRefresh: _loadCart,
-      child: ListView.separated(
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
         itemCount: _cartItems.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 16),
         itemBuilder: (context, index) {
+          debugPrint('_buildCartTab: Building item $index of ${_cartItems.length}');
           final item = _cartItems[index];
+          debugPrint('_buildCartTab: Item $index - ${item.cameraName}, id: ${item.id}');
+          return Padding(
+            padding: EdgeInsets.only(bottom: index < _cartItems.length - 1 ? 16 : 0),
+            child: _buildCartItem(item),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildCartItem(BookingCartItem item) {
+    debugPrint('_buildCartItem: Building item - ${item.cameraName}, id: ${item.id}, cameraId: ${item.cameraId}');
           return Card(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
@@ -967,7 +934,7 @@ class _BookingListScreenState extends State<BookingListScreen>
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Icon(
-                            item.type == BookingItemType.accessory
+                            (item.type ?? BookingItemType.camera) == BookingItemType.accessory
                                 ? Icons.memory
                                 : Icons.camera_alt,
                             color: Theme.of(context).colorScheme.primary,
@@ -1159,337 +1126,10 @@ class _BookingListScreenState extends State<BookingListScreen>
                   ],
                 ),
               ),
-            ),
-          );
-        },
       ),
     );
   }
 
-  Widget _buildHistoryTab(BuildContext context) {
-    if (_isHistoryLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_historyError != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.error_outline,
-                size: 64,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Không thể tải lịch sử đặt lịch',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[800],
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _historyError!,
-                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: _loadHistory,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Thử lại'),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (_historyItems.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 150,
-              height: 150,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Theme.of(context).colorScheme.primary.withOpacity(0.2),
-                    Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                  ],
-                ),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.history,
-                size: 80,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-            const SizedBox(height: 32),
-            Text(
-              'Chưa có đặt lịch nào',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey[800],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 48),
-              child: Text(
-                'Khi bạn hoàn tất đặt lịch, chúng sẽ xuất hiện tại đây.',
-                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: _loadHistory,
-      child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        itemCount: _historyItems.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 16),
-        itemBuilder: (context, index) {
-          final booking = _historyItems[index];
-          final statusColor = _statusColor(booking.status);
-          return Material(
-            color: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(20),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => BookingDetailScreen(booking: booking),
-                  ),
-                );
-              },
-              child: Ink(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      statusColor.withOpacity(0.18),
-                      Colors.white,
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: statusColor.withOpacity(0.3),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.04),
-                      blurRadius: 12,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      width: 5,
-                      margin: const EdgeInsets.symmetric(vertical: 16),
-                      decoration: BoxDecoration(
-                        color: statusColor,
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(20),
-                          bottomLeft: Radius.circular(20),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                CircleAvatar(
-                                  radius: 20,
-                                  backgroundColor: statusColor.withOpacity(0.18),
-                                  child: Icon(
-                                    Icons.camera_alt,
-                                    color: statusColor,
-                                    size: 20,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        booking.cameraName.isNotEmpty
-                                            ? booking.cameraName
-                                            : 'Máy ảnh đã xóa',
-                                        style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            Icons.person_outline,
-                                            size: 14,
-                                            color: Colors.grey[600],
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Expanded(
-                                            child: Text(
-                                              booking.customerName,
-                                              style: TextStyle(
-                                                fontSize: 13,
-                                                color: Colors.grey[700],
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      if (booking.branchName != null &&
-                                          booking.branchName!.isNotEmpty) ...[
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          booking.branchName!,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[500],
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                                Chip(
-                                  label: Text(
-                                    booking.statusString,
-                                    style: TextStyle(
-                                      color: statusColor,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  backgroundColor: statusColor.withOpacity(0.15),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 0,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 14),
-                            Row(
-                              children: [
-                                _buildHistoryInfoBlock(
-                                  icon: Icons.date_range,
-                                  label: 'Khoảng',
-                                  value: _formatHistoryRange(booking),
-                                ),
-                                const SizedBox(width: 12),
-                                _buildHistoryInfoBlock(
-                                  icon: Icons.schedule,
-                                  label: 'Tạo',
-                                  value: _formatDateTime(booking.createdAt),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            Divider(color: Colors.grey[200], thickness: 1),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Tổng cộng',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey[500],
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      _formatCurrency(booking.totalPrice),
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: Theme.of(context).colorScheme.primary,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const Spacer(),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      'Khách hàng',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey[500],
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      booking.customerName,
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    if (booking.customerPhone.isNotEmpty) ...[
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        booking.customerPhone,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey[600],
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
 
   String? _asString(dynamic value) {
     if (value == null) return null;
