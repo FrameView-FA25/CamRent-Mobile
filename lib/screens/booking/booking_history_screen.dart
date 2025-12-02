@@ -21,15 +21,26 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     _loadHistory();
   }
 
+  /// Tải danh sách lịch sử đặt lịch từ API /api/Bookings/renterbookings
   Future<void> _loadHistory() async {
+    if (!mounted) return;
+    
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
     try {
-      debugPrint('BookingHistoryScreen: Starting to load booking history...');
-      final data = await ApiService.getBookings();
+      debugPrint('BookingHistoryScreen: Starting to load booking history from /api/Bookings/renterbookings...');
+      
+      // Gọi API với timeout để tránh load lâu
+      final data = await ApiService.getBookings().timeout(
+        const Duration(seconds: 35),
+        onTimeout: () {
+          debugPrint('BookingHistoryScreen: API call timeout');
+          throw Exception('Kết nối quá lâu. Vui lòng kiểm tra kết nối mạng và thử lại');
+        },
+      );
       debugPrint('BookingHistoryScreen: Received ${data.length} items from API');
       debugPrint('BookingHistoryScreen: Data type: ${data.runtimeType}');
       
@@ -83,15 +94,23 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       if (bookings.isEmpty && data.isNotEmpty) {
         debugPrint('BookingHistoryScreen: WARNING - All bookings failed to parse!');
         debugPrint('BookingHistoryScreen: First item sample: ${data.first}');
+        debugPrint('BookingHistoryScreen: First item type: ${data.first.runtimeType}');
+        if (data.first is Map) {
+          debugPrint('BookingHistoryScreen: First item keys: ${(data.first as Map).keys.toList()}');
+        }
         // If we have data but couldn't parse any, show error with details
         if (mounted) {
           setState(() {
             _bookings = [];
             _isLoading = false;
-            _error = 'Nhận được ${data.length} đặt lịch từ server nhưng không thể xử lý dữ liệu. Vui lòng kiểm tra console logs để biết thêm chi tiết.';
+            _error = 'Nhận được ${data.length} đặt lịch từ server nhưng không thể xử lý dữ liệu.\n\nVui lòng kiểm tra console logs để biết thêm chi tiết hoặc thử lại sau.';
           });
         }
         return;
+      }
+      
+      if (bookings.isEmpty) {
+        debugPrint('BookingHistoryScreen: No bookings to display');
       }
 
       // Sort by created date (newest first)
@@ -111,12 +130,28 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     } catch (e, stackTrace) {
       debugPrint('BookingHistoryScreen: Exception - ${e.toString()}');
       debugPrint('BookingHistoryScreen: StackTrace - $stackTrace');
-      if (mounted) {
-        setState(() {
-          _error = e.toString().replaceFirst('Exception: ', '');
-          _isLoading = false;
-        });
+      
+      if (!mounted) return;
+      
+      // Provide user-friendly error messages
+      String errorMessage;
+      if (e.toString().contains('timeout') || e.toString().contains('TimeoutException')) {
+        errorMessage = 'Kết nối quá lâu. Vui lòng kiểm tra kết nối mạng và thử lại';
+      } else if (e.toString().contains('SocketException') || e.toString().contains('Failed host lookup')) {
+        errorMessage = 'Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng';
+      } else if (e.toString().contains('401') || e.toString().contains('Unauthorized')) {
+        errorMessage = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại';
+      } else {
+        errorMessage = e.toString().replaceFirst('Exception: ', '');
+        if (errorMessage.isEmpty) {
+          errorMessage = 'Đã xảy ra lỗi không xác định. Vui lòng thử lại';
+        }
       }
+      
+      setState(() {
+        _error = errorMessage;
+        _isLoading = false;
+      });
     }
   }
 
@@ -150,6 +185,10 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     return '$start → $end';
   }
 
+  String _formatTime(DateTime date) {
+    return '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
   String _formatCurrency(double value) {
     if (value <= 0) return '0 VNĐ';
     final raw = value.toStringAsFixed(0);
@@ -174,17 +213,34 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
             colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.05),
-              Colors.white,
+              const Color(0xFFFF6600).withOpacity(0.25), // Cam - chủ đạo
+              const Color(0xFFFF6600).withOpacity(0.2), // Cam - tiếp tục
+              const Color(0xFF00A651).withOpacity(0.15), // Xanh lá - nhẹ
+              const Color(0xFF0066CC).withOpacity(0.1), // Xanh dương - rất nhẹ
             ],
-            stops: const [0.0, 0.3],
+            stops: const [0.0, 0.4, 0.7, 1.0],
           ),
         ),
         child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Đang tải lịch sử đặt lịch...',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              )
             : _error != null
                 ? Center(
                     child: Padding(
@@ -281,213 +337,131 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                   ),
                                 ),
                               )
-                            : ListView.separated(
+                            : ListView.builder(
                                 physics: const AlwaysScrollableScrollPhysics(),
-                                padding: const EdgeInsets.all(16),
+                                padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
                                 itemCount: _bookings.length,
-                                separatorBuilder: (_, __) => const SizedBox(height: 16),
                                 itemBuilder: (context, index) {
-                            final booking = _bookings[index];
-                            final statusColor = _statusColor(booking.status);
-                            return Material(
-                              color: Colors.transparent,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(20),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) =>
-                                          BookingDetailScreen(booking: booking),
-                                    ),
-                                  );
-                                },
-                                child: Ink(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                      colors: [
-                                        statusColor.withOpacity(0.18),
-                                        Colors.white,
-                                      ],
-                                    ),
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(
-                                      color: statusColor.withOpacity(0.3),
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.04),
-                                        blurRadius: 12,
-                                        offset: const Offset(0, 6),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                                    children: [
-                                      Container(
-                                        width: 5,
-                                        margin: const EdgeInsets.symmetric(vertical: 16),
-                                        decoration: BoxDecoration(
-                                          color: statusColor,
-                                          borderRadius: const BorderRadius.only(
-                                            topLeft: Radius.circular(20),
-                                            bottomLeft: Radius.circular(20),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
+                                  final booking = _bookings[index];
+                                  final statusColor = _statusColor(booking.status);
+                                  
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    child: Material(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(12),
+                                      elevation: 1,
+                                      shadowColor: Colors.black.withOpacity(0.05),
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(12),
+                                        onTap: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (context) =>
+                                                  BookingDetailScreen(booking: booking),
+                                            ),
+                                          );
+                                        },
                                         child: Padding(
-                                          padding: const EdgeInsets.symmetric(vertical: 16),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                          padding: const EdgeInsets.all(16),
+                                          child: Row(
                                             children: [
-                                              Row(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  CircleAvatar(
-                                                    radius: 20,
-                                                    backgroundColor:
-                                                        statusColor.withOpacity(0.18),
-                                                    child: Icon(
-                                                      Icons.camera_alt,
-                                                      color: statusColor,
-                                                      size: 20,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 12),
-                                                  Expanded(
-                                                    child: Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment.start,
+                                              // Status indicator
+                                              Container(
+                                                width: 4,
+                                                height: 60,
+                                                decoration: BoxDecoration(
+                                                  color: statusColor,
+                                                  borderRadius: BorderRadius.circular(2),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              // Content
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    // Date range
+                                                    Row(
                                                       children: [
-                                                        Text(
-                                                          booking.cameraName.isNotEmpty
-                                                              ? booking.cameraName
-                                                              : 'Máy ảnh đã xóa',
-                                                          style: const TextStyle(
-                                                            fontSize: 18,
-                                                            fontWeight: FontWeight.bold,
+                                                        Icon(
+                                                          Icons.calendar_today,
+                                                          size: 16,
+                                                          color: Colors.grey[600],
+                                                        ),
+                                                        const SizedBox(width: 6),
+                                                        Expanded(
+                                                          child: Text(
+                                                            _formatDateRange(booking),
+                                                            style: const TextStyle(
+                                                              fontSize: 15,
+                                                              fontWeight: FontWeight.w600,
+                                                              color: Colors.black87,
+                                                            ),
                                                           ),
                                                         ),
-                                                        const SizedBox(height: 6),
-                                                        Row(
-                                                          children: [
-                                                            Icon(
-                                                              Icons.person_outline,
-                                                              size: 14,
-                                                              color: Colors.grey[600],
-                                                            ),
-                                                            const SizedBox(width: 4),
-                                                            Expanded(
-                                                              child: Text(
-                                                                booking.customerName,
-                                                                style: TextStyle(
-                                                                  fontSize: 13,
-                                                                  color: Colors.grey[700],
-                                                                ),
-                                                                overflow: TextOverflow.ellipsis,
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                        if (booking.branchName != null &&
-                                                            booking.branchName!.isNotEmpty) ...[
-                                                          const SizedBox(height: 4),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 8),
+                                                    // Time range (if available)
+                                                    if (booking.pickupAt != null && booking.returnAt != null)
+                                                      Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons.access_time,
+                                                            size: 14,
+                                                            color: Colors.grey[500],
+                                                          ),
+                                                          const SizedBox(width: 6),
                                                           Text(
-                                                            booking.branchName!,
+                                                            '${_formatTime(booking.pickupAt!)} - ${_formatTime(booking.returnAt!)}',
                                                             style: TextStyle(
-                                                              fontSize: 12,
-                                                              color: Colors.grey[500],
+                                                              fontSize: 13,
+                                                              color: Colors.grey[600],
                                                             ),
                                                           ),
                                                         ],
-                                                      ],
+                                                      ),
+                                                    const SizedBox(height: 8),
+                                                    // Price
+                                                    Text(
+                                                      _formatCurrency(booking.totalPrice),
+                                                      style: TextStyle(
+                                                        fontSize: 18,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: Theme.of(context).colorScheme.primary,
+                                                      ),
                                                     ),
-                                                  ),
-                                                  Chip(
-                                                    label: Text(
+                                                  ],
+                                                ),
+                                              ),
+                                              // Status chip and arrow
+                                              Column(
+                                                children: [
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: statusColor.withOpacity(0.15),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                    ),
+                                                    child: Text(
                                                       booking.statusString,
                                                       style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.w600,
                                                         color: statusColor,
-                                                        fontWeight: FontWeight.bold,
-                                                        fontSize: 12,
                                                       ),
-                                                    ),
-                                                    backgroundColor:
-                                                        statusColor.withOpacity(0.15),
-                                                    padding: const EdgeInsets.symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 0,
                                                     ),
                                                   ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 14),
-                                              Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment.start,
-                                                      children: [
-                                                        Row(
-                                                          children: [
-                                                            Icon(
-                                                              Icons.date_range,
-                                                              size: 14,
-                                                              color: Colors.grey[500],
-                                                            ),
-                                                            const SizedBox(width: 6),
-                                                            Text(
-                                                              'Khoảng thời gian',
-                                                              style: TextStyle(
-                                                                fontSize: 11,
-                                                                color: Colors.grey[500],
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                        const SizedBox(height: 4),
-                                                        Text(
-                                                          _formatDateRange(booking),
-                                                          style: const TextStyle(
-                                                            fontSize: 14,
-                                                            fontWeight: FontWeight.w600,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment.end,
-                                                    children: [
-                                                      Text(
-                                                        'Tổng cộng',
-                                                        style: TextStyle(
-                                                          fontSize: 12,
-                                                          color: Colors.grey[500],
-                                                        ),
-                                                      ),
-                                                      const SizedBox(height: 6),
-                                                      Text(
-                                                        _formatCurrency(booking.totalPrice),
-                                                        style: TextStyle(
-                                                          fontSize: 18,
-                                                          fontWeight: FontWeight.bold,
-                                                          color: Theme.of(context)
-                                                              .colorScheme
-                                                              .primary,
-                                                        ),
-                                                      ),
-                                                    ],
+                                                  const SizedBox(height: 8),
+                                                  Icon(
+                                                    Icons.chevron_right,
+                                                    color: Colors.grey[400],
+                                                    size: 20,
                                                   ),
                                                 ],
                                               ),
@@ -495,13 +469,10 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                           ),
                                         ),
                                       ),
-                                    ],
-                                  ),
-                                ),
+                                    ),
+                                  );
+                                },
                               ),
-                            );
-                          },
-                        ),
                       ),
       ),
     );

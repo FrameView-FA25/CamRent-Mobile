@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:uni_links/uni_links.dart';
-import 'dart:async';
 
 import '../../services/api_service.dart';
 import '../booking/booking_list_screen.dart';
@@ -24,80 +22,7 @@ class PaymentScreen extends StatefulWidget {
 }
 
 class _PaymentScreenState extends State<PaymentScreen> {
-  StreamSubscription? _linkSubscription;
-  bool _isListeningForDeeplinks = false;
-
-  @override
-  void dispose() {
-    _linkSubscription?.cancel();
-    super.dispose();
-  }
-
-  void _startListeningForDeeplinks() {
-    if (_isListeningForDeeplinks) return;
-    
-    _isListeningForDeeplinks = true;
-    debugPrint('PaymentScreen: Starting to listen for deeplinks using uni_links...');
-    
-    // Listen for deeplinks using uni_links
-    _linkSubscription = linkStream.listen(
-      (String? link) {
-        if (link != null && mounted) {
-          debugPrint('PaymentScreen: Received deeplink via uni_links: $link');
-          _handlePaymentDeeplink(link);
-        }
-      },
-      onError: (err) {
-        debugPrint('PaymentScreen: Error listening to uni_links: $err');
-      },
-    );
-    
-    // Also check for initial link
-    getInitialLink().then((String? initialLink) {
-      if (initialLink != null && mounted) {
-        debugPrint('PaymentScreen: Received initial deeplink via uni_links: $initialLink');
-        _handlePaymentDeeplink(initialLink);
-      }
-    }).catchError((err) {
-      debugPrint('PaymentScreen: Error getting initial link via uni_links: $err');
-    });
-  }
-
-  void _handlePaymentDeeplink(String link) {
-    try {
-      final uri = Uri.parse(link);
-      debugPrint('PaymentScreen: Parsed deeplink URI: $uri');
-      
-      // Check if it's a payment callback
-      if (uri.scheme == 'cameraforrent' && uri.host == 'payment') {
-        final status = uri.queryParameters['status'] ?? 
-                      (uri.path.contains('success') ? 'success' : 
-                       uri.path.contains('cancel') ? 'cancel' : null);
-        
-        if (status == 'success') {
-          debugPrint('PaymentScreen: Payment success detected via uni_links');
-          _showPaymentSuccessDialog();
-        } else if (status == 'cancel') {
-          debugPrint('PaymentScreen: Payment cancelled detected via uni_links');
-          _showPaymentCancelDialog();
-        }
-      } else if (uri.scheme == 'https' || uri.scheme == 'http') {
-        // Check for HTTP redirect URLs
-        if (uri.path.contains('/return') || uri.path.contains('/payment/return')) {
-          final status = uri.queryParameters['status'];
-          if (status == 'success') {
-            debugPrint('PaymentScreen: Payment success detected via HTTP redirect');
-            _showPaymentSuccessDialog();
-          } else if (status == 'cancel') {
-            debugPrint('PaymentScreen: Payment cancelled detected via HTTP redirect');
-            _showPaymentCancelDialog();
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('PaymentScreen: Error handling deeplink: $e');
-    }
-  }
+  // Deep link handling is done globally in main.dart using app_links
 
   void _showPaymentSuccessDialog() {
     if (!mounted) return;
@@ -329,8 +254,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
       debugPrint('PaymentScreen: Booking ID: $bookingId');
       debugPrint('PaymentScreen: Payment ID: $paymentId');
       
-      // Start listening for deeplinks using uni_links
-      _startListeningForDeeplinks();
+      // Deep link handling is done globally in main.dart using app_links
+      // No need to listen here as main.dart will handle payment callbacks
       
       // Parse and validate URI
       final uri = Uri.parse(cleanedUrl);
@@ -738,13 +663,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
             colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.05),
-              Colors.white,
+              const Color(0xFFFF6600).withOpacity(0.25), // Cam - chủ đạo
+              const Color(0xFFFF6600).withOpacity(0.2), // Cam - tiếp tục
+              const Color(0xFF00A651).withOpacity(0.15), // Xanh lá - nhẹ
+              const Color(0xFF0066CC).withOpacity(0.1), // Xanh dương - rất nhẹ
             ],
-            stops: const [0.0, 0.3],
+            stops: const [0.0, 0.4, 0.7, 1.0],
           ),
         ),
         child: SafeArea(

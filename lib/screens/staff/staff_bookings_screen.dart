@@ -94,40 +94,55 @@ class _StaffBookingsScreenState extends State<StaffBookingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        title: const Text(
-          'Bookings',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Colors.black87,
-            letterSpacing: 0.5,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFFFF6600).withOpacity(0.25), // Cam - chủ đạo
+              const Color(0xFFFF6600).withOpacity(0.2), // Cam - tiếp tục
+              const Color(0xFF00A651).withOpacity(0.15), // Xanh lá - nhẹ
+              const Color(0xFF0066CC).withOpacity(0.1), // Xanh dương - rất nhẹ
+            ],
+            stops: const [0.0, 0.4, 0.7, 1.0],
           ),
         ),
-        actions: [
-          Container(
-            margin: const EdgeInsets.only(right: 8),
-            child: IconButton(
-              icon: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.refresh_rounded,
-                  color: Theme.of(context).colorScheme.primary,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(
+            elevation: 0,
+            backgroundColor: Colors.white,
+            title: const Text(
+              'Bookings',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+                letterSpacing: 0.5,
+              ),
+            ),
+            actions: [
+              Container(
+                margin: const EdgeInsets.only(right: 8),
+                child: IconButton(
+                  icon: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.refresh_rounded,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  onPressed: _loadBookings,
                 ),
               ),
-              onPressed: _loadBookings,
-            ),
+            ],
           ),
-        ],
-      ),
-      body: RefreshIndicator(
+          body: RefreshIndicator(
         onRefresh: _loadBookings,
         child: _isLoading && _bookings.isEmpty
             ? const Center(child: CircularProgressIndicator())
@@ -188,6 +203,8 @@ class _StaffBookingsScreenState extends State<StaffBookingsScreen> {
                           return _buildModernBookingCard(booking, index);
                         },
                       ),
+          ),
+        ),
       ),
     );
   }

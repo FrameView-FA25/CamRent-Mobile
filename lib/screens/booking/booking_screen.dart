@@ -158,12 +158,15 @@ class _BookingScreenState extends State<BookingScreen>
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
             colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.08),
-              Colors.white,
+              const Color(0xFFFF6600).withOpacity(0.25), // Cam - chủ đạo
+              const Color(0xFFFF6600).withOpacity(0.2), // Cam - tiếp tục
+              const Color(0xFF00A651).withOpacity(0.15), // Xanh lá - nhẹ
+              const Color(0xFF0066CC).withOpacity(0.1), // Xanh dương - rất nhẹ
             ],
+            stops: const [0.0, 0.4, 0.7, 1.0],
           ),
         ),
         child: SafeArea(

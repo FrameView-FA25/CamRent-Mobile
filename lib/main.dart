@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:app_links/app_links.dart';
 import 'screens/login/login_screen.dart';
 import 'screens/booking/booking_list_screen.dart';
@@ -206,6 +207,9 @@ class _MyAppState extends State<MyApp> {
           onTertiary: Colors.white,
         ),
         useMaterial3: true,
+        // Set Source Sans Pro as default font for the entire app
+        textTheme: GoogleFonts.sourceSans3TextTheme(),
+        primaryTextTheme: GoogleFonts.sourceSans3TextTheme(),
       ),
       home: const LoginScreen(),
       debugShowCheckedModeBanner: false,

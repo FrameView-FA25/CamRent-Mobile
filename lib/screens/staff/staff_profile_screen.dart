@@ -1,9 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_service.dart';
 import '../../screens/login/login_screen.dart';
+import '../../screens/profile/edit_profile_screen.dart';
 
 class StaffProfileScreen extends StatefulWidget {
   const StaffProfileScreen({super.key});
@@ -30,53 +29,27 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
     });
 
     try {
-      // Try to get user info from token or API
-      // For now, we'll use stored token info
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('auth_token');
-      if (token != null) {
-        // Decode JWT to get user info
-        try {
-          final parts = token.split('.');
-          if (parts.length == 3) {
-            final payload = parts[1];
-            String normalizedPayload = payload;
-            switch (payload.length % 4) {
-              case 1:
-                normalizedPayload += '===';
-                break;
-              case 2:
-                normalizedPayload += '==';
-                break;
-              case 3:
-                normalizedPayload += '=';
-                break;
-            }
-            final decodedPayload = utf8.decode(base64.decode(normalizedPayload));
-            final payloadJson = jsonDecode(decodedPayload) as Map<String, dynamic>;
-            
-            setState(() {
-              _userInfo = payloadJson;
-              _isLoading = false;
-            });
-            return;
-          }
-        } catch (e) {
-          debugPrint('Error decoding token: $e');
-        }
+      // Use API to get profile
+      final data = await ApiService.getProfile();
+      if (mounted) {
+        setState(() {
+          _userInfo = data;
+          _isLoading = false;
+        });
       }
-      
-      setState(() {
-        _isLoading = false;
-        _error = 'Không thể tải thông tin người dùng';
-      });
     } catch (e) {
       debugPrint('Error loading user info: $e');
-      setState(() {
-        _error = e.toString().replaceFirst('Exception: ', '');
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = e.toString().replaceFirst('Exception: ', '');
+          _isLoading = false;
+        });
+      }
     }
+  }
+
+  Future<void> _refreshProfile() async {
+    await _loadUserInfo();
   }
 
   Future<void> _logout() async {
@@ -162,8 +135,21 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      body: SafeArea(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFFFF6600).withOpacity(0.25), // Cam - chủ đạo
+              const Color(0xFFFF6600).withOpacity(0.2), // Cam - tiếp tục
+              const Color(0xFF00A651).withOpacity(0.15), // Xanh lá - nhẹ
+              const Color(0xFF0066CC).withOpacity(0.1), // Xanh dương - rất nhẹ
+            ],
+            stops: const [0.0, 0.4, 0.7, 1.0],
+          ),
+        ),
+        child: SafeArea(
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
@@ -302,6 +288,38 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
                                 title: 'Tài khoản',
                                 children: [
                                   _buildMenuItem(
+                                    icon: Icons.person_outline_rounded,
+                                    title: 'Chỉnh sửa thông tin',
+                                    subtitle: 'Cập nhật thông tin cá nhân',
+                                    iconColor: Colors.blue,
+                                    onTap: () async {
+                                      if (_userInfo == null) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Vui lòng đợi tải thông tin'),
+                                            backgroundColor: Colors.orange,
+                                          ),
+                                        );
+                                        return;
+                                      }
+                                      
+                                      final result = await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => EditProfileScreen(
+                                            initialData: _userInfo,
+                                          ),
+                                        ),
+                                      );
+                                      
+                                      // Refresh profile if update was successful
+                                      if (result == true) {
+                                        _refreshProfile();
+                                      }
+                                    },
+                                  ),
+                                  const Divider(height: 1),
+                                  _buildMenuItem(
                                     icon: Icons.lock_outline_rounded,
                                     title: 'Đổi mật khẩu',
                                     subtitle: 'Cập nhật mật khẩu của bạn',
@@ -401,6 +419,7 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
                       ],
                     ),
                   ),
+        ),
       ),
     );
   }

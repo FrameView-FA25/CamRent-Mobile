@@ -170,7 +170,7 @@ class BookingModel {
       }
     }
 
-    // Parse status - can be string ("PendingApproval") or int (0-9)
+    // Parse status - can be string ("PendingApproval", "Draft") or int (0-9)
     int bookingStatus = 0; // default
     if (json['status'] != null) {
       if (json['status'] is int) {
@@ -179,6 +179,7 @@ class BookingModel {
         final statusStr = json['status'].toString().toLowerCase();
         // Map common status strings to int values
         final statusMap = {
+          'draft': 0, // Draft status maps to pending
           'pendingapproval': 0,
           'pending': 0,
           'approved': 1,
@@ -304,12 +305,22 @@ class BookingItem {
             ? int.tryParse(json['quantity'].toString()) ?? 1 
             : 1);
     
+    // Parse unitPrice - can be in different fields
+    final unitPrice = BookingModel._parseDouble(
+      json['unitPrice'] ?? 
+      json['unit_price'] ?? 
+      json['price'] ?? 
+      json['dailyRate'] ?? 
+      json['daily_rate'] ?? 
+      0,
+    );
+    
     return BookingItem(
       itemId: json['itemId']?.toString(),
       itemName: json['itemName']?.toString(),
       itemType: json['itemType']?.toString(),
       quantity: quantity,
-      unitPrice: (json['unitPrice'] ?? 0).toDouble(),
+      unitPrice: unitPrice,
     );
   }
 

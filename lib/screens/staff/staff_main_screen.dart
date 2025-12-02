@@ -39,9 +39,24 @@ class _StaffMainScreenState extends State<StaffMainScreen> with SingleTickerProv
     ];
 
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: screens,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFFFF6600).withOpacity(0.25), // Cam - chủ đạo
+              const Color(0xFFFF6600).withOpacity(0.2), // Cam - tiếp tục
+              const Color(0xFF00A651).withOpacity(0.15), // Xanh lá - nhẹ
+              const Color(0xFF0066CC).withOpacity(0.1), // Xanh dương - rất nhẹ
+            ],
+            stops: const [0.0, 0.4, 0.7, 1.0],
+          ),
+        ),
+        child: IndexedStack(
+          index: _currentIndex,
+          children: screens,
+        ),
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(

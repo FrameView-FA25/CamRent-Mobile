@@ -162,8 +162,23 @@ class _StaffBookingDetailScreenState extends State<StaffBookingDetailScreen> {
     final booking = _booking!;
 
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFFFF6600).withOpacity(0.25), // Cam - chủ đạo
+              const Color(0xFFFF6600).withOpacity(0.2), // Cam - tiếp tục
+              const Color(0xFF00A651).withOpacity(0.15), // Xanh lá - nhẹ
+              const Color(0xFF0066CC).withOpacity(0.1), // Xanh dương - rất nhẹ
+            ],
+            stops: const [0.0, 0.4, 0.7, 1.0],
+          ),
+        ),
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(
         elevation: 0,
         backgroundColor: Colors.white,
         leading: Container(
@@ -715,6 +730,8 @@ class _StaffBookingDetailScreenState extends State<StaffBookingDetailScreen> {
                 ],
               ),
             ),
+        ),
+      ),
     );
   }
 

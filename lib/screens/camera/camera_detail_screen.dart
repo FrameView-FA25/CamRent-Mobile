@@ -42,12 +42,14 @@ class CameraDetailScreen extends StatelessWidget {
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
             colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.05),
-              Colors.white,
+              const Color(0xFFFF6600), // FPT Orange - Cam
+              const Color(0xFF00A651), // FPT Green - Xanh lá
+              const Color(0xFF0066CC), // FPT Blue - Xanh dương
             ],
+            stops: const [0.0, 0.4, 0.7, 1.0],
           ),
         ),
         child: SingleChildScrollView(
@@ -56,74 +58,69 @@ class CameraDetailScreen extends StatelessWidget {
             children: [
               // Image với hero animation
               Hero(
-                tag: 'camera_${camera.id}',
+                tag: 'product_${camera.id}',
                 child: Container(
-                  height: 400,
+                  height: 380,
                   width: double.infinity,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        Theme.of(context).colorScheme.primary.withOpacity(0.12),
-                        Colors.grey[300]!,
+                        Theme.of(context).colorScheme.primary.withOpacity(0.08),
+                        Colors.grey[100]!,
                       ],
                     ),
                   ),
                   child: Stack(
                     children: [
-                      ColorFiltered(
-                        colorFilter: ColorFilter.mode(
-                          Colors.black.withOpacity(0.1),
-                          BlendMode.darken,
-                        ),
-                        child: Image.network(
-                          camera.imageUrl,
-                          fit: BoxFit.cover,
-                          height: 400,
-                          loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
-                            return Container(
-                              alignment: Alignment.center,
-                              child: CircularProgressIndicator(
-                                value:
-                                    loadingProgress.expectedTotalBytes != null
-                                        ? loadingProgress
-                                                .cumulativeBytesLoaded /
-                                            loadingProgress.expectedTotalBytes!
-                                        : null,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                            );
-                          },
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    Theme.of(
-                                      context,
-                                    ).colorScheme.primary.withOpacity(0.3),
-                                    Theme.of(
-                                      context,
-                                    ).colorScheme.primary.withOpacity(0.1),
-                                  ],
-                                ),
-                              ),
-                              child: Center(
-                                child: Icon(
-                                  Icons.camera_alt,
-                                  size: 120,
-                                  color: Theme.of(
+                      Image.network(
+                        camera.imageUrl,
+                        fit: BoxFit.contain,
+                        height: 380,
+                        width: double.infinity,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Container(
+                            alignment: Alignment.center,
+                            child: CircularProgressIndicator(
+                              value:
+                                  loadingProgress.expectedTotalBytes != null
+                                      ? loadingProgress
+                                              .cumulativeBytesLoaded /
+                                          loadingProgress.expectedTotalBytes!
+                                      : null,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Theme.of(
                                     context,
-                                  ).colorScheme.primary.withOpacity(0.5),
-                                ),
+                                  ).colorScheme.primary.withOpacity(0.3),
+                                  Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withOpacity(0.1),
+                                ],
                               ),
-                            );
-                          },
-                        ),
+                            ),
+                            child: Center(
+                              child: Icon(
+                                Icons.camera_alt,
+                                size: 120,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(0.5),
+                              ),
+                            ),
+                          );
+                        },
                       ),
                       // Gradient overlay
                       Positioned.fill(
@@ -149,23 +146,48 @@ class CameraDetailScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      camera.brand,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w500,
+                    // Brand Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        camera.brand.toUpperCase(),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                          letterSpacing: 1.2,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 12),
                     Text(
                       camera.name,
                       style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                        letterSpacing: -0.5,
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 8),
+                    // Description
+                    Text(
+                      camera.description,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: Colors.grey[600],
+                        height: 1.5,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
                     // Price card với gradient
                     Container(
                       padding: const EdgeInsets.all(20),

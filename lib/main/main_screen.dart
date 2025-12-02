@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/booking/booking_list_screen.dart';
+import '../screens/booking/booking_history_screen.dart';
 import '../profile/profile_screen.dart';
 import '../services/api_service.dart';
 import '../screens/staff/staff_main_screen.dart';
@@ -71,6 +72,7 @@ class _MainScreenState extends State<MainScreen> {
     final screens = [
       const HomeScreen(),
       BookingListScreen(key: _bookingListKey),
+      const BookingHistoryScreen(),
       const ProfileScreen(),
     ];
     
@@ -79,65 +81,73 @@ class _MainScreenState extends State<MainScreen> {
         index: _currentIndex,
         children: screens,
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, -5),
-            ),
-          ],
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (index) {
-            final previousIndex = _currentIndex;
-            setState(() {
-              _currentIndex = index;
-            });
-            
-            // Reload cart when switching to cart tab
-            if (index == 1 && previousIndex != 1) {
-              // Use a small delay to ensure the widget is built
-              Future.delayed(const Duration(milliseconds: 100), () {
-                final state = _bookingListKey.currentState;
-                if (state != null) {
-                  // Call reloadCart if it exists
-                  try {
-                    debugPrint('MainScreen: Attempting to reload cart');
-                    // Use dynamic call to access reloadCart method
-                    (state as dynamic).reloadCart();
-                  } catch (e) {
-                    debugPrint('MainScreen: Error calling reloadCart: $e');
-                  }
-                }
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          decoration: BoxDecoration(
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 10,
+                offset: const Offset(0, -5),
+              ),
+            ],
+          ),
+          child: BottomNavigationBar(
+            currentIndex: _currentIndex,
+            onTap: (index) {
+              final previousIndex = _currentIndex;
+              setState(() {
+                _currentIndex = index;
               });
-            }
-          },
-          type: BottomNavigationBarType.fixed,
-          selectedItemColor: Theme.of(context).colorScheme.primary,
-          unselectedItemColor: Colors.grey,
-          selectedFontSize: 12,
-          unselectedFontSize: 12,
-          elevation: 8,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.home),
-              activeIcon: Icon(Icons.home_rounded),
-              label: 'Trang chủ',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.shopping_cart_outlined),
-              activeIcon: Icon(Icons.shopping_cart),
-              label: 'Giỏ hàng',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: Icon(Icons.person),
-              label: 'Hồ sơ',
-            ),
-          ],
+              
+              // Reload cart when switching to cart tab
+              if (index == 1 && previousIndex != 1) {
+                // Use a small delay to ensure the widget is built
+                Future.delayed(const Duration(milliseconds: 100), () {
+                  final state = _bookingListKey.currentState;
+                  if (state != null) {
+                    // Call reloadCart if it exists
+                    try {
+                      debugPrint('MainScreen: Attempting to reload cart');
+                      // Use dynamic call to access reloadCart method
+                      (state as dynamic).reloadCart();
+                    } catch (e) {
+                      debugPrint('MainScreen: Error calling reloadCart: $e');
+                    }
+                  }
+                });
+              }
+            },
+            type: BottomNavigationBarType.fixed,
+            selectedItemColor: Theme.of(context).colorScheme.primary,
+            unselectedItemColor: Colors.grey,
+            selectedFontSize: 11,
+            unselectedFontSize: 11,
+            elevation: 8,
+            items: const [
+              BottomNavigationBarItem(
+                icon: Icon(Icons.home),
+                activeIcon: Icon(Icons.home_rounded),
+                label: 'Trang chủ',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.shopping_cart_outlined),
+                activeIcon: Icon(Icons.shopping_cart),
+                label: 'Giỏ hàng',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.history),
+                activeIcon: Icon(Icons.history),
+                label: 'Lịch sử',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.person_outline),
+                activeIcon: Icon(Icons.person),
+                label: 'Hồ sơ',
+              ),
+            ],
+          ),
         ),
       ),
     );

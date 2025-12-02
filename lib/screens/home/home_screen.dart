@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../models/camera_model.dart';
 import '../../models/accessory_model.dart';
 import '../../models/product_item.dart';
@@ -10,7 +11,6 @@ import '../../widgets/camera_card.dart';
 import '../../main/main_screen.dart';
 import '../camera/camera_detail_screen.dart';
 import '../accessory/accessory_detail_screen.dart';
-import '../booking/booking_history_screen.dart';
 import '../booking/booking_screen.dart';
 import '../booking/booking_list_screen.dart';
 
@@ -23,7 +23,7 @@ class HomeScreen extends StatefulWidget {
 
 enum FilterType { all, camera, accessory }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   final Random _random = Random();
   List<ProductItem> _products = [];
@@ -32,6 +32,7 @@ class _HomeScreenState extends State<HomeScreen> {
   FilterType _selectedFilter = FilterType.all;
   final PageController _bannerPageController = PageController();
   int _currentBannerIndex = 0;
+  late AnimationController _cameraRotationController;
 
   Future<void> _loadProducts() async {
     setState(() {
@@ -128,6 +129,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _cameraRotationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat();
     _searchController.addListener(_filterProducts);
     _loadProducts();
     _startBannerAutoScroll();
@@ -138,6 +143,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchController.removeListener(_filterProducts);
     _searchController.dispose();
     _bannerPageController.dispose();
+    _cameraRotationController.dispose();
     super.dispose();
   }
 
@@ -401,27 +407,22 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _navigateToBookingHistory() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const BookingHistoryScreen(),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
             colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.05),
-              Colors.white,
+              const Color(0xFFFF6600).withOpacity(0.25), // Cam - chủ đạo
+              const Color(0xFFFF6600).withOpacity(0.2), // Cam - tiếp tục
+              const Color(0xFF00A651).withOpacity(0.15), // Xanh lá - nhẹ
+              const Color(0xFF0066CC).withOpacity(0.1), // Xanh dương - rất nhẹ
             ],
-            stops: const [0.0, 0.3],
+            stops: const [0.0, 0.4, 0.7, 1.0],
           ),
         ),
         child: CustomScrollView(
@@ -430,51 +431,112 @@ class _HomeScreenState extends State<HomeScreen> {
               expandedHeight: 120,
               floating: false,
               pinned: true,
+              backgroundColor: Colors.transparent,
+              elevation: 0,
               flexibleSpace: FlexibleSpaceBar(
                 titlePadding: EdgeInsets.zero,
                 title: const SizedBox.shrink(),
-                background: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Image.network(
-                      'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1600&q=80',
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                Theme.of(context).colorScheme.primary,
-                                Theme.of(context)
-                                    .colorScheme
-                                    .primary
-                                    .withOpacity(0.7),
-                              ],
+                background: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        const Color(0xFFFF6600).withOpacity(0.25), // Cam - chủ đạo
+                        const Color(0xFFFF6600).withOpacity(0.2), // Cam - tiếp tục
+                        const Color(0xFF00A651).withOpacity(0.15), // Xanh lá - nhẹ
+                        const Color(0xFF0066CC).withOpacity(0.1), // Xanh dương - rất nhẹ
+                      ],
+                      stops: const [0.0, 0.4, 0.7, 1.0],
+                    ),
+                  ),
+                  child: SafeArea(
+                    bottom: false,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // "Camera" text on the left
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 12),
+                              child: Text(
+                                'CAMERA',
+                                style: GoogleFonts.cinzel(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: 2.0,
+                                  height: 1.0,
+                                ),
+                                textAlign: TextAlign.right,
+                                softWrap: false,
+                                overflow: TextOverflow.visible,
+                              ),
                             ),
                           ),
-                        );
-                      },
-                    ),
-                    Positioned.fill(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.black.withOpacity(0.1),
-                              Colors.black.withOpacity(0.05),
-                            ],
+                        ),
+                        // Rotating camera icon in the center
+                        RotationTransition(
+                          turns: Tween<double>(begin: 0, end: 1).animate(
+                            CurvedAnimation(
+                              parent: _cameraRotationController,
+                              curve: Curves.linear,
+                            ),
+                          ),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.25),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.4),
+                                width: 2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.camera_alt_rounded,
+                              color: Colors.white,
+                              size: 40,
+                            ),
                           ),
                         ),
-                      ),
+                        // "For Rent" text on the right
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 12),
+                              child: Text(
+                                'FOR RENT',
+                                style: GoogleFonts.cinzel(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: 2.0,
+                                  height: 1.0,
+                                ),
+                                textAlign: TextAlign.left,
+                                softWrap: false,
+                                overflow: TextOverflow.visible,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
-              elevation: 0,
             ),
             SliverToBoxAdapter(
               child: Builder(
@@ -763,66 +825,72 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               )
             else
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 24,
-                    crossAxisSpacing: 20,
-                    childAspectRatio: 0.75,
-                  ),
-                  delegate: SliverChildBuilderDelegate((context, index) {
-                    final product = _filteredProducts[index];
-                    return CameraCard(
-                      camera: product.type == ProductType.camera
-                          ? product.camera!
-                          : null,
-                      accessory: product.type == ProductType.accessory
-                          ? product.accessory!
-                          : null,
-                      onTap: () {
-                        if (product.type == ProductType.camera) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => CameraDetailScreen(
-                                camera: product.camera!,
-                              ),
+              SliverToBoxAdapter(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // Calculate height dynamically to avoid overflow
+                    // Account for bottom navigation bar (around 80px) and padding
+                    final screenHeight = MediaQuery.of(context).size.height;
+                    final availableHeight = screenHeight - 
+                        MediaQuery.of(context).padding.top - 
+                        kToolbarHeight - 
+                        80 - // Bottom navigation bar
+                        200; // Other UI elements (banner, search, filters, etc.)
+                    
+                    final cardHeight = availableHeight.clamp(500.0, 700.0);
+                    
+                    return SizedBox(
+                      height: cardHeight,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                        itemCount: _filteredProducts.length,
+                        itemBuilder: (context, index) {
+                          final product = _filteredProducts[index];
+                          return Container(
+                            width: 280,
+                            margin: const EdgeInsets.only(right: 16),
+                            child: CameraCard(
+                              camera: product.type == ProductType.camera
+                                  ? product.camera!
+                                  : null,
+                              accessory: product.type == ProductType.accessory
+                                  ? product.accessory!
+                                  : null,
+                              onTap: () {
+                                if (product.type == ProductType.camera) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => CameraDetailScreen(
+                                        camera: product.camera!,
+                                      ),
+                                    ),
+                                  );
+                                } else {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => AccessoryDetailScreen(
+                                        accessory: product.accessory!,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                              onAddToCart: () => _handleAddToCart(product),
                             ),
                           );
-                        } else {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => AccessoryDetailScreen(
-                                accessory: product.accessory!,
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                      onAddToCart: () => _handleAddToCart(product),
+                        },
+                      ),
                     );
-                  }, childCount: _filteredProducts.length),
+                  },
                 ),
               ),
+            // Add bottom padding to avoid being covered by bottom navigation bar
             SliverToBoxAdapter(
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-                child: ElevatedButton.icon(
-                  onPressed: _navigateToBookingHistory,
-                  icon: const Icon(Icons.history),
-                  label: const Text('Lịch sử đặt lịch'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
+              child: SizedBox(
+                height: MediaQuery.of(context).padding.bottom + 80,
               ),
             ),
           ],

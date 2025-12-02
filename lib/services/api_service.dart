@@ -2163,8 +2163,24 @@ class ApiService {
   }
 
   // Get renter's booking history (lịch sử giao dịch)
-  // Endpoint: /api/Bookings/renterbookings
-  // Returns: List of booking objects with id, type, status, items, etc.
+  /// Lấy danh sách lịch sử đặt lịch của renter (người thuê)
+  /// 
+  /// Endpoint: GET /api/Bookings/renterbookings
+  /// 
+  /// Yêu cầu: User phải đã đăng nhập (cần token)
+  /// 
+  /// Returns: List<dynamic> - Danh sách các booking objects với các thông tin:
+  ///   - id: ID của booking
+  ///   - type: Loại booking
+  ///   - status: Trạng thái booking (0: Chờ xử lý, 1: Đã xác nhận, 2: Đang thuê, 3: Đã trả, 4: Đã hủy)
+  ///   - items: Danh sách các items trong booking
+  ///   - pickupAt: Ngày nhận
+  ///   - returnAt: Ngày trả
+  ///   - totalPrice: Tổng giá trị
+  ///   - customerName: Tên khách hàng
+  ///   - cameraName: Tên máy ảnh
+  ///   - branchName: Tên chi nhánh
+  ///   - và các thông tin khác
   static Future<List<dynamic>> getBookings() async {
     try {
       // Check if user is authenticated
@@ -2178,9 +2194,16 @@ class ApiService {
       debugPrint('getBookings: Calling endpoint: $endpoint');
       
       // Use /Bookings/renterbookings endpoint to get renter's booking history
+      // Add timeout to prevent hanging
       http.Response response = await http.get(
         Uri.parse(endpoint),
         headers: await _getHeaders(requiresAuth: true, includeContentType: false),
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          debugPrint('getBookings: Request timeout after 30 seconds');
+          throw Exception('Kết nối quá lâu. Vui lòng kiểm tra kết nối mạng và thử lại');
+        },
       );
       
       debugPrint('getBookings: Full URL called: ${response.request?.url}');
@@ -2191,6 +2214,12 @@ class ApiService {
         response = await http.get(
           Uri.parse('$baseUrl/Bookings'),
           headers: await _getHeaders(requiresAuth: true, includeContentType: false),
+        ).timeout(
+          const Duration(seconds: 30),
+          onTimeout: () {
+            debugPrint('getBookings: Alternative endpoint timeout after 30 seconds');
+            throw Exception('Kết nối quá lâu. Vui lòng kiểm tra kết nối mạng và thử lại');
+          },
         );
       }
 
@@ -2306,6 +2335,70 @@ class ApiService {
     }
 
     return null;
+  }
+
+  /// Lấy mã QR code của booking
+  /// 
+  /// Endpoint: GET /api/Bookings/{id}/qr
+  /// 
+  /// Returns: Map với các thông tin:
+  ///   - bookingId: ID của booking
+  ///   - payload: Payload của QR code (ví dụ: "booking:58be7af6f8484624a0a7e21c0be31032")
+  ///   - pngImage: Base64 encoded PNG image của QR code
+  static Future<Map<String, dynamic>> getBookingQrCode(String bookingId) async {
+    try {
+      final token = await _getToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('Vui lòng đăng nhập để xem mã QR');
+      }
+
+      final endpoint = '$baseUrl/Bookings/$bookingId/qr';
+      debugPrint('getBookingQrCode: Calling endpoint: $endpoint');
+
+      final response = await http.get(
+        Uri.parse(endpoint),
+        headers: await _getHeaders(requiresAuth: true, includeContentType: false),
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          debugPrint('getBookingQrCode: Request timeout');
+          throw Exception('Kết nối quá lâu. Vui lòng thử lại');
+        },
+      );
+
+      final statusCode = response.statusCode;
+      final body = response.body;
+
+      debugPrint('getBookingQrCode: Response status: $statusCode');
+
+      if (statusCode == 401) {
+        throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại');
+      }
+
+      if (statusCode == 404) {
+        throw Exception('Không tìm thấy mã QR cho booking này');
+      }
+
+      if (statusCode >= 200 && statusCode < 300) {
+        try {
+          final decoded = jsonDecode(body) as Map<String, dynamic>;
+          debugPrint('getBookingQrCode: Successfully retrieved QR code');
+          return decoded;
+        } catch (e) {
+          debugPrint('getBookingQrCode: JSON decode error: $e');
+          throw Exception('Không thể đọc dữ liệu QR code từ server');
+        }
+      }
+
+      final errorMsg = _extractErrorMessage(body);
+      throw Exception(errorMsg ?? 'Không thể lấy mã QR code (Lỗi: $statusCode)');
+    } catch (e) {
+      debugPrint('getBookingQrCode: Exception - ${e.toString()}');
+      if (e is Exception) {
+        rethrow;
+      }
+      throw Exception('Không thể lấy mã QR code: ${e.toString()}');
+    }
   }
 
   // Get bookings for a specific item (camera or accessory) to check availability
@@ -2478,6 +2571,76 @@ class ApiService {
       return _handleResponse(response);
     } catch (e) {
       throw Exception('Failed to update profile: ${e.toString()}');
+    }
+  }
+
+  /// Ký hợp đồng (contract)
+  /// 
+  /// Endpoint: POST /api/Contracts/{contractId}/sign
+  /// 
+  /// Body: { "signatureBase64": "string" }
+  /// 
+  /// Returns: Map với thông tin hợp đồng đã ký
+  static Future<Map<String, dynamic>> signContract({
+    required String contractId,
+    required String signatureBase64,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('Vui lòng đăng nhập để ký hợp đồng');
+      }
+
+      final endpoint = '$baseUrl/Contracts/$contractId/sign';
+      debugPrint('signContract: Calling endpoint: $endpoint');
+
+      final body = jsonEncode({
+        'signatureBase64': signatureBase64,
+      });
+
+      final response = await http.post(
+        Uri.parse(endpoint),
+        headers: await _getHeaders(requiresAuth: true),
+        body: body,
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Kết nối quá lâu. Vui lòng thử lại');
+        },
+      );
+
+      final statusCode = response.statusCode;
+      final responseBody = response.body;
+
+      debugPrint('signContract: Response status: $statusCode');
+
+      if (statusCode == 401) {
+        throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại');
+      }
+
+      if (statusCode == 404) {
+        throw Exception('Không tìm thấy hợp đồng');
+      }
+
+      if (statusCode >= 200 && statusCode < 300) {
+        try {
+          final decoded = jsonDecode(responseBody) as Map<String, dynamic>;
+          debugPrint('signContract: Successfully signed contract');
+          return decoded;
+        } catch (e) {
+          debugPrint('signContract: JSON decode error: $e');
+          throw Exception('Không thể đọc phản hồi từ server');
+        }
+      }
+
+      final errorMsg = _extractErrorMessage(responseBody);
+      throw Exception(errorMsg ?? 'Không thể ký hợp đồng (Lỗi: $statusCode)');
+    } catch (e) {
+      debugPrint('signContract: Exception - ${e.toString()}');
+      if (e is Exception) {
+        rethrow;
+      }
+      throw Exception('Không thể ký hợp đồng: ${e.toString()}');
     }
   }
 }

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../models/booking_cart_item.dart';
 import '../../models/camera_model.dart';
 import '../../services/api_service.dart';
-import 'booking_history_screen.dart';
 import '../camera/camera_detail_screen.dart';
 import '../../checkout/checkout_screen.dart';
 
@@ -101,14 +100,6 @@ class _BookingListScreenState extends State<BookingListScreen> {
         _isCartLoading = false;
       });
     }
-  }
-
-  void _navigateToBookingHistory() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const BookingHistoryScreen(),
-      ),
-    );
   }
 
   List<BookingCartItem> _extractItems(Map<String, dynamic> data) {
@@ -571,13 +562,15 @@ class _BookingListScreenState extends State<BookingListScreen> {
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
             colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.05),
-              Colors.white,
+              const Color(0xFFFF6600).withOpacity(0.25), // Cam - chủ đạo
+              const Color(0xFFFF6600).withOpacity(0.2), // Cam - tiếp tục
+              const Color(0xFF00A651).withOpacity(0.15), // Xanh lá - nhẹ
+              const Color(0xFF0066CC).withOpacity(0.1), // Xanh dương - rất nhẹ
             ],
-            stops: const [0.0, 0.3],
+            stops: const [0.0, 0.4, 0.7, 1.0],
           ),
         ),
         child: SafeArea(
@@ -733,64 +726,15 @@ class _BookingListScreenState extends State<BookingListScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        onPressed: _navigateToBookingHistory,
-                        icon: const Icon(Icons.history),
-                        label: const Text('Lịch sử đặt lịch'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Theme.of(context).colorScheme.primary,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          side: BorderSide(
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
               )
-              : SafeArea(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, -4),
-                      ),
-                    ],
-                  ),
-                  child: ElevatedButton.icon(
-                    onPressed: _navigateToBookingHistory,
-                    icon: const Icon(Icons.history),
-                    label: const Text('Lịch sử đặt lịch'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
+              : const SizedBox.shrink(),
     );
   }
 
   Widget _buildCartTab(BuildContext context) {
-    // Debug logging
-    debugPrint('_buildCartTab: isLoading: $_isCartLoading, error: $_cartError, items: ${_cartItems.length}');
-    
     if (_isCartLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -881,13 +825,6 @@ class _BookingListScreenState extends State<BookingListScreen> {
       );
     }
 
-    debugPrint('_buildCartTab: Building ListView with ${_cartItems.length} items');
-    
-    if (_cartItems.isEmpty) {
-      debugPrint('_buildCartTab: WARNING - Items list is empty, but should not reach here!');
-      return const SizedBox.shrink();
-    }
-
     return RefreshIndicator(
       onRefresh: _loadCart,
       child: ListView.builder(
@@ -895,9 +832,7 @@ class _BookingListScreenState extends State<BookingListScreen> {
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
         itemCount: _cartItems.length,
         itemBuilder: (context, index) {
-          debugPrint('_buildCartTab: Building item $index of ${_cartItems.length}');
           final item = _cartItems[index];
-          debugPrint('_buildCartTab: Item $index - ${item.cameraName}, id: ${item.id}');
           return Padding(
             padding: EdgeInsets.only(bottom: index < _cartItems.length - 1 ? 16 : 0),
             child: _buildCartItem(item),
@@ -908,8 +843,7 @@ class _BookingListScreenState extends State<BookingListScreen> {
   }
 
   Widget _buildCartItem(BookingCartItem item) {
-    debugPrint('_buildCartItem: Building item - ${item.cameraName}, id: ${item.id}, cameraId: ${item.cameraId}');
-          return Card(
+    return Card(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),

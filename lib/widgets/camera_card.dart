@@ -111,8 +111,6 @@ class CameraCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final branchDisplay = _branchName;
-    final addressDisplay = _branchAddress;
-    final depositText = _depositText;
 
     final priceLabel = _isCombo
         ? combo!.shortPriceLabel
@@ -122,14 +120,18 @@ class CameraCard extends StatelessWidget {
     final priceCycle = _pricePerDay > 0 ? '/ngày' : '';
 
     return Container(
+      constraints: const BoxConstraints(
+        minHeight: 420,
+        maxHeight: 420,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.06),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
+            blurRadius: 15,
+            offset: const Offset(0, 3),
             spreadRadius: 0,
           ),
         ],
@@ -138,21 +140,22 @@ class CameraCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               // Product Image - Apple Store Style
               Hero(
                 tag: 'product_$_id',
                 child: Container(
-                  height: 280,
+                  height: 200,
                   width: double.infinity,
                   decoration: BoxDecoration(
                     color: Colors.grey[50],
                     borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(24),
-                      topRight: Radius.circular(24),
+                      topLeft: Radius.circular(20),
+                      topRight: Radius.circular(20),
                     ),
                   ),
                   child: Stack(
@@ -160,8 +163,8 @@ class CameraCard extends StatelessWidget {
                       // Product Image
                       ClipRRect(
                         borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(24),
-                          topRight: Radius.circular(24),
+                          topLeft: Radius.circular(20),
+                          topRight: Radius.circular(20),
                         ),
                         child: Image.network(
                           _imageUrl,
@@ -235,194 +238,119 @@ class CameraCard extends StatelessWidget {
                 ),
               ),
               ),
-              // Content - Apple Store Style
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Brand Badge
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: const BoxDecoration(
-                        color: Colors.black,
-                        borderRadius: BorderRadius.all(Radius.circular(6)),
-                      ),
-                      child: Text(
-                        _brand.toUpperCase(),
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                          letterSpacing: 1.2,
+              // Content - Compact Style
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Brand Badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: const BoxDecoration(
+                          color: Colors.black,
+                          borderRadius: BorderRadius.all(Radius.circular(4)),
+                        ),
+                        child: Text(
+                          _brand.toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                            letterSpacing: 0.8,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    // Product Name - Large, Bold
-                    Text(
-                      _name,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w600,
-                        height: 1.2,
-                        letterSpacing: -0.5,
-                        color: Colors.black87,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 12),
-                    // Description - Subtle
-                    Text(
-                      _description,
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: Colors.grey[600],
-                        height: 1.5,
-                        letterSpacing: -0.2,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 20),
-                    // Price - Prominent
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
+                      const SizedBox(height: 10),
+                      // Product Name
                       Text(
-                        priceLabel,
-                        style: TextStyle(
-                          fontSize: 28,
+                        _name,
+                        style: const TextStyle(
+                          fontSize: 16,
                           fontWeight: FontWeight.w600,
+                          height: 1.2,
+                          letterSpacing: -0.3,
                           color: Colors.black87,
-                          letterSpacing: -0.8,
                         ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      if (priceCycle.isNotEmpty) ...[
-                        const SizedBox(width: 4),
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Text(
-                            priceCycle,
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                    ),
-                    // Key Features - Minimal Style
-                    if (_features.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: _features.take(3).map((feature) {
-                        return Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[50],
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.grey[200]!,
-                              width: 1,
-                            ),
-                          ),
-                          child: Text(
-                            feature,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.grey[700],
-                              letterSpacing: -0.2,
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                      ),
-                    ],
-                    const SizedBox(height: 20),
-                    // Divider
-                    Divider(
-                      height: 1,
-                      thickness: 1,
-                      color: Colors.grey[200],
-                    ),
-                    const SizedBox(height: 16),
-                    // Location Info - Minimal
-                    Row(
-                      children: [
-                      Icon(
-                        Icons.location_on_outlined,
-                        size: 18,
-                        color: Colors.grey[600],
-                      ),
-                      const SizedBox(width: 8),
+                      const SizedBox(height: 6),
+                      // Description
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              branchDisplay,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.black87,
-                                letterSpacing: -0.2,
-                              ),
-                            ),
-                            if (addressDisplay != null && addressDisplay.isNotEmpty) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                addressDisplay,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey[600],
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ],
+                        child: Text(
+                          _description,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                            height: 1.4,
+                            letterSpacing: -0.1,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ],
-                    ),
-                    if (depositText.isNotEmpty) ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
+                      // Price
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            priceLabel,
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          if (priceCycle.isNotEmpty) ...[
+                            const SizedBox(width: 3),
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Text(
+                                priceCycle,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                  fontWeight: FontWeight.w400,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      // Location Info - Compact
                       Row(
                         children: [
-                        Icon(
-                          Icons.account_balance_wallet_outlined,
-                          size: 18,
-                          color: Colors.grey[600],
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            depositText,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.black87,
-                              letterSpacing: -0.2,
+                          Icon(
+                            Icons.location_on_outlined,
+                            size: 14,
+                            color: Colors.grey[600],
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              branchDisplay,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.grey[700],
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        ),
-                      ],
+                        ],
                       ),
                     ],
-                  ],
+                  ),
                 ),
               ),
             ],

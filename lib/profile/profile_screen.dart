@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../screens/login/login_screen.dart';
 import '../screens/booking/booking_list_screen.dart';
+import '../screens/profile/edit_profile_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -45,6 +46,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         });
       }
     }
+  }
+
+  Future<void> _refreshProfile() async {
+    await _loadProfile();
+    await _loadBookingCount();
   }
 
   Future<void> _loadBookingCount() async {
@@ -95,12 +101,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
             colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.1),
-              Colors.white,
+              const Color(0xFFFF6600).withOpacity(0.25), // Cam - chủ đạo
+              const Color(0xFFFF6600).withOpacity(0.2), // Cam - tiếp tục
+              const Color(0xFF00A651).withOpacity(0.15), // Xanh lá - nhẹ
+              const Color(0xFF0066CC).withOpacity(0.1), // Xanh dương - rất nhẹ
             ],
+            stops: const [0.0, 0.4, 0.7, 1.0],
           ),
         ),
         child: SafeArea(
@@ -263,12 +272,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         icon: Icons.person_outline,
                         title: 'Thông tin cá nhân',
                         subtitle: 'Cập nhật thông tin tài khoản',
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Tính năng đang phát triển'),
+                        onTap: () async {
+                          if (_profileData == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Vui lòng đợi tải thông tin'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                            return;
+                          }
+                          
+                          final result = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => EditProfileScreen(
+                                initialData: _profileData,
+                              ),
                             ),
                           );
+                          
+                          // Refresh profile if update was successful
+                          if (result == true) {
+                            _refreshProfile();
+                          }
                         },
                       ),
                       const SizedBox(height: 12),
