@@ -449,6 +449,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     try {
       debugPrint('PaymentScreen: Getting payment URL for bookingId: $bookingId');
       
+      // Note: Delay is now handled inside getPaymentUrlFromBookingId with retry logic
       // Get payment URL directly from booking ID (simplified flow)
       final amount = widget.depositAmount > 0 ? widget.depositAmount : widget.totalAmount;
       final paymentUrl = await ApiService.getPaymentUrlFromBookingId(

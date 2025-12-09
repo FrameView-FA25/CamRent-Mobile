@@ -23,7 +23,7 @@ class HomeScreen extends StatefulWidget {
 
 enum FilterType { all, camera, accessory }
 
-class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   final Random _random = Random();
   List<ProductItem> _products = [];
@@ -32,7 +32,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   FilterType _selectedFilter = FilterType.all;
   final PageController _bannerPageController = PageController();
   int _currentBannerIndex = 0;
-  late AnimationController _cameraRotationController;
 
   Future<void> _loadProducts() async {
     setState(() {
@@ -129,10 +128,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _cameraRotationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )..repeat();
     _searchController.addListener(_filterProducts);
     _loadProducts();
     _startBannerAutoScroll();
@@ -143,7 +138,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _searchController.removeListener(_filterProducts);
     _searchController.dispose();
     _bannerPageController.dispose();
-    _cameraRotationController.dispose();
     super.dispose();
   }
 
@@ -437,76 +431,107 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 titlePadding: EdgeInsets.zero,
                 title: const SizedBox.shrink(),
                 background: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
                         const Color(0xFFFF6600).withOpacity(0.25), // Cam - chủ đạo
                         const Color(0xFFFF6600).withOpacity(0.2), // Cam - tiếp tục
                         const Color(0xFF00A651).withOpacity(0.15), // Xanh lá - nhẹ
                         const Color(0xFF0066CC).withOpacity(0.1), // Xanh dương - rất nhẹ
                       ],
                       stops: const [0.0, 0.4, 0.7, 1.0],
-                    ),
-                  ),
+                                        ),
+                                      ),
                   child: SafeArea(
                     bottom: false,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
+                    children: [
                         // "Camera" text on the left
                         Expanded(
                           child: Align(
                             alignment: Alignment.centerRight,
-                            child: Padding(
+              child: Padding(
                               padding: const EdgeInsets.only(right: 12),
-                              child: Text(
-                                'CAMERA',
-                                style: GoogleFonts.cinzel(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                  letterSpacing: 2.0,
-                                  height: 1.0,
-                                ),
-                                textAlign: TextAlign.right,
-                                softWrap: false,
-                                overflow: TextOverflow.visible,
+                              child: Stack(
+                                children: [
+                                  // Black stroke/outline - thicker for better visibility
+                                  Text(
+                                    'CAMERA',
+                                    style: GoogleFonts.cinzel(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w700,
+                                      foreground: Paint()
+                                        ..style = PaintingStyle.stroke
+                                        ..strokeWidth = 4
+                                        ..color = Colors.black,
+                                      letterSpacing: 2.0,
+                                      height: 1.0,
+                                    ),
+                                    textAlign: TextAlign.right,
+                                    softWrap: false,
+                                    overflow: TextOverflow.visible,
+                                  ),
+                                  // White fill text on top
+                                  Text(
+                                    'CAMERA',
+                                    style: GoogleFonts.cinzel(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                      letterSpacing: 2.0,
+                                      height: 1.0,
+                                    ),
+                                    textAlign: TextAlign.right,
+                                    softWrap: false,
+                                    overflow: TextOverflow.visible,
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
-                        ),
-                        // Rotating camera icon in the center
-                        RotationTransition(
-                          turns: Tween<double>(begin: 0, end: 1).animate(
-                            CurvedAnimation(
-                              parent: _cameraRotationController,
-                              curve: Curves.linear,
-                            ),
-                          ),
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.25),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.4),
-                                width: 2,
+                  ),
+                ),
+                        // CamRent logo in the center
+                        Container(
+                          width: 100,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            color: Colors.transparent,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.15),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
                               ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: const Icon(
-                              Icons.camera_alt_rounded,
-                              color: Colors.white,
-                              size: 40,
+                            ],
+                          ),
+                          child: ClipOval(
+                            child: Image.asset(
+                              'assets/images/camrent_logo.png',
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                // Fallback to icon if image not found
+                                return Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.25),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: Colors.white.withOpacity(0.4),
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    Icons.camera_alt_rounded,
+                                    color: Colors.white,
+                                    size: 50,
+                                  ),
+                                );
+                              },
                             ),
                           ),
                         ),
@@ -516,29 +541,49 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                             alignment: Alignment.centerLeft,
                             child: Padding(
                               padding: const EdgeInsets.only(left: 12),
-                              child: Text(
-                                'FOR RENT',
-                                style: GoogleFonts.cinzel(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                  letterSpacing: 2.0,
-                                  height: 1.0,
-                                ),
-                                textAlign: TextAlign.left,
-                                softWrap: false,
-                                overflow: TextOverflow.visible,
+                              child: Stack(
+                                children: [
+                                  // Black stroke/outline - thicker for better visibility
+                                  Text(
+                                    'FOR RENT',
+                                    style: GoogleFonts.cinzel(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w700,
+                                      foreground: Paint()
+                                        ..style = PaintingStyle.stroke
+                                        ..strokeWidth = 4
+                                        ..color = Colors.black,
+                                      letterSpacing: 2.0,
+                                      height: 1.0,
+                                    ),
+                                    textAlign: TextAlign.left,
+                                    softWrap: false,
+                                  ),
+                                  // White fill text on top
+                                  Text(
+                                    'FOR RENT',
+                                    style: GoogleFonts.cinzel(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                      letterSpacing: 2.0,
+                                      height: 1.0,
+                                    ),
+                                    textAlign: TextAlign.left,
+                                    softWrap: false,
+                                  ),
+                                ],
                               ),
                             ),
                           ),
                         ),
-                      ],
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
               ),
-            ),
-            SliverToBoxAdapter(
+          SliverToBoxAdapter(
               child: Builder(
                 builder: (context) {
                   final bannerImages = _bannerImages;
@@ -549,236 +594,236 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     margin: const EdgeInsets.all(16),
                     height: 200,
                     child: Stack(
-                      children: [
-                        PageView.builder(
-                          controller: _bannerPageController,
-                          onPageChanged: (index) {
-                            setState(() {
-                              _currentBannerIndex = index;
-                            });
-                          },
-                          itemCount: bannerImages.length,
-                          itemBuilder: (context, index) {
-                            final imageUrl = bannerImages[index];
-                            return Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 4),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.2),
-                                    blurRadius: 15,
-                                    offset: const Offset(0, 8),
-                                  ),
-                                ],
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(20),
-                                child: Image.network(
-                                  imageUrl,
-                                  fit: BoxFit.cover,
+                    children: [
+                      PageView.builder(
+                        controller: _bannerPageController,
+                        onPageChanged: (index) {
+                          setState(() {
+                            _currentBannerIndex = index;
+                          });
+                        },
+                        itemCount: bannerImages.length,
+                        itemBuilder: (context, index) {
+                          final imageUrl = bannerImages[index];
+                          return Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.2),
+                                  blurRadius: 15,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(20),
+                              child: Image.network(
+                                imageUrl,
+                                fit: BoxFit.cover,
                                   loadingBuilder:
                                       (context, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return Container(
-                                      color: Colors.grey[200],
-                                      child: Center(
-                                        child: CircularProgressIndicator(
+                                  if (loadingProgress == null) return child;
+                                  return Container(
+                                    color: Colors.grey[200],
+                                    child: Center(
+                                      child: CircularProgressIndicator(
                                           value: loadingProgress
                                                   .expectedTotalBytes !=
-                                              null
-                                              ? loadingProgress
-                                                      .cumulativeBytesLoaded /
-                                                  loadingProgress
-                                                      .expectedTotalBytes!
-                                              : null,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .primary,
-                                        ),
+                                                null
+                                            ? loadingProgress
+                                                    .cumulativeBytesLoaded /
+                                                loadingProgress
+                                                    .expectedTotalBytes!
+                                            : null,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary,
                                       ),
-                                    );
-                                  },
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Container(
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
-                                          colors: [
+                                    ),
+                                  );
+                                },
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
                                             Theme.of(context)
                                                 .colorScheme
                                                 .primary,
-                                            Theme.of(context)
-                                                .colorScheme
-                                                .primary
-                                                .withOpacity(0.7),
-                                          ],
-                                        ),
+                                          Theme.of(context)
+                                              .colorScheme
+                                              .primary
+                                              .withOpacity(0.7),
+                                        ],
                                       ),
-                                      child: const Center(
-                                        child: Icon(
-                                          Icons.camera_alt,
-                                          size: 64,
-                                          color: Colors.white,
-                                        ),
+                                    ),
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.camera_alt,
+                                        size: 64,
+                                        color: Colors.white,
                                       ),
-                                    );
-                                  },
-                                ),
+                                    ),
+                                  );
+                                },
                               ),
-                            );
-                          },
-                        ),
-                        Positioned(
-                          bottom: 12,
-                          left: 0,
-                          right: 0,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: List.generate(
-                              bannerImages.length,
-                              (index) => Container(
-                                width: 8,
-                                height: 8,
+                            ),
+                          );
+                        },
+                      ),
+                      Positioned(
+                        bottom: 12,
+                        left: 0,
+                        right: 0,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(
+                            bannerImages.length,
+                            (index) => Container(
+                              width: 8,
+                              height: 8,
                                 margin: const EdgeInsets.symmetric(
                                     horizontal: 4),
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: _currentBannerIndex == index
-                                      ? Colors.white
-                                      : Colors.white.withOpacity(0.4),
-                                ),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _currentBannerIndex == index
+                                    ? Colors.white
+                                    : Colors.white.withOpacity(0.4),
                               ),
                             ),
                           ),
                         ),
-                      ],
+                      ),
+                    ],
                     ),
                   );
                 },
-              ),
             ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                  ),
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: 'Tìm kiếm sản phẩm...',
-                      prefixIcon: Icon(
-                        Icons.search,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      suffixIcon: _searchController.text.isNotEmpty
-                          ? IconButton(
-                              icon: Icon(
-                                Icons.clear,
-                                color: Colors.grey[600],
-                              ),
-                              onPressed: () {
-                                _searchController.clear();
-                              },
-                            )
-                          : null,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: Colors.white,
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 5),
                     ),
+                  ],
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Tìm kiếm sản phẩm...',
+                    prefixIcon: Icon(
+                      Icons.search,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: Icon(
+                              Icons.clear,
+                              color: Colors.grey[600],
+                            ),
+                            onPressed: () {
+                              _searchController.clear();
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
                   ),
                 ),
               ),
             ),
-            const SliverToBoxAdapter(child: SizedBox(height: 16)),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _buildFilterChip(
-                        context,
-                        label: 'Tất cả',
-                        isSelected: _selectedFilter == FilterType.all,
-                        icon: Icons.apps,
-                        onTap: () => _setFilter(FilterType.all),
-                      ),
-                      const SizedBox(width: 8),
-                      _buildFilterChip(
-                        context,
-                        label: 'Máy ảnh',
-                        isSelected: _selectedFilter == FilterType.camera,
-                        icon: Icons.camera_alt,
-                        onTap: () => _setFilter(FilterType.camera),
-                      ),
-                      const SizedBox(width: 8),
-                      _buildFilterChip(
-                        context,
-                        label: 'Phụ kiện',
-                        isSelected: _selectedFilter == FilterType.accessory,
-                        icon: Icons.memory,
-                        onTap: () => _setFilter(FilterType.accessory),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 16)),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _buildFilterChip(
+                      context,
+                      label: 'Tất cả',
+                      isSelected: _selectedFilter == FilterType.all,
+                      icon: Icons.apps,
+                      onTap: () => _setFilter(FilterType.all),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildFilterChip(
+                      context,
+                      label: 'Máy ảnh',
+                      isSelected: _selectedFilter == FilterType.camera,
+                      icon: Icons.camera_alt,
+                      onTap: () => _setFilter(FilterType.camera),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildFilterChip(
+                      context,
+                      label: 'Phụ kiện',
+                      isSelected: _selectedFilter == FilterType.accessory,
+                      icon: Icons.memory,
+                      onTap: () => _setFilter(FilterType.accessory),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
+          SliverToBoxAdapter(
+            child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _selectedFilter == FilterType.camera
+                children: [
+                  Text(
+                    _selectedFilter == FilterType.camera
                               ? 'Máy ảnh'
-                              : _selectedFilter == FilterType.accessory
+                        : _selectedFilter == FilterType.accessory
                                   ? 'Phụ kiện'
                                   : 'Sản phẩm',
-                          style: const TextStyle(
+                    style: const TextStyle(
                             fontSize: 34,
                             fontWeight: FontWeight.w600,
                             letterSpacing: -1.0,
                             color: Colors.black87,
                             height: 1.1,
-                          ),
-                        ),
+                    ),
+                  ),
                         const SizedBox(height: 4),
-                        Text(
-                          '${_filteredProducts.length} sản phẩm',
-                          style: TextStyle(
+                  Text(
+                    '${_filteredProducts.length} sản phẩm',
+                      style: TextStyle(
                             fontSize: 15,
-                            color: Colors.grey[600],
+                        color: Colors.grey[600],
                             letterSpacing: -0.3,
                             fontWeight: FontWeight.w400,
-                          ),
-                        ),
+                              ),
+                            ),
                       ],
-                    ),
-                  ],
-                ),
+            ),
+        ],
+      ),
               ),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 16)),
@@ -846,46 +891,46 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                         itemCount: _filteredProducts.length,
                         itemBuilder: (context, index) {
-                          final product = _filteredProducts[index];
+                    final product = _filteredProducts[index];
                           return Container(
                             width: 280,
                             margin: const EdgeInsets.only(right: 16),
-                            child: CameraCard(
-                              camera: product.type == ProductType.camera
-                                  ? product.camera!
-                                  : null,
-                              accessory: product.type == ProductType.accessory
-                                  ? product.accessory!
-                                  : null,
-                              onTap: () {
-                                if (product.type == ProductType.camera) {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => CameraDetailScreen(
-                                        camera: product.camera!,
-                                      ),
-                                    ),
-                                  );
-                                } else {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => AccessoryDetailScreen(
-                                        accessory: product.accessory!,
-                                      ),
-                                    ),
-                                  );
-                                }
-                              },
-                              onAddToCart: () => _handleAddToCart(product),
-                            ),
-                          );
+                      child: CameraCard(
+                        camera: product.type == ProductType.camera
+                            ? product.camera!
+                            : null,
+                        accessory: product.type == ProductType.accessory
+                            ? product.accessory!
+                            : null,
+                        onTap: () {
+                          if (product.type == ProductType.camera) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => CameraDetailScreen(
+                                  camera: product.camera!,
+                                ),
+                              ),
+                            );
+                          } else {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => AccessoryDetailScreen(
+                                  accessory: product.accessory!,
+                                ),
+                              ),
+                            );
+                          }
                         },
+                        onAddToCart: () => _handleAddToCart(product),
                       ),
                     );
-                  },
+                        },
                 ),
+                    );
+                  },
+              ),
               ),
             // Add bottom padding to avoid being covered by bottom navigation bar
             SliverToBoxAdapter(
@@ -900,12 +945,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildFilterChip(
-      BuildContext context, {
-        required String label,
-        required bool isSelected,
-        required IconData icon,
-        required VoidCallback onTap,
-      }) {
+    BuildContext context, {
+    required String label,
+    required bool isSelected,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
@@ -917,28 +962,28 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: isSelected
-                ? Theme.of(context).colorScheme.primary
-                : Colors.grey[300]!,
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.grey[300]!,
             width: 1.5,
           ),
           boxShadow: isSelected
-              ? [
-                  BoxShadow(
+                  ? [
+                    BoxShadow(
                     color: Theme.of(context)
                         .colorScheme
                         .primary
                         .withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ]
-              : [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                  : [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -947,8 +992,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               icon,
               size: 18,
               color: isSelected
-                  ? Colors.white
-                  : Theme.of(context).colorScheme.primary,
+                      ? Colors.white
+                      : Theme.of(context).colorScheme.primary,
             ),
             const SizedBox(width: 8),
             Text(
@@ -957,8 +1002,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: isSelected
-                    ? Colors.white
-                    : Theme.of(context).colorScheme.primary,
+                        ? Colors.white
+                        : Theme.of(context).colorScheme.primary,
               ),
             ),
           ],

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import '../screens/login/login_screen.dart';
 import '../screens/booking/booking_list_screen.dart';
@@ -16,12 +17,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Map<String, dynamic>? _profileData;
   String? _error;
   int _bookingCount = 0;
+  double _walletBalance = 0.0;
+  bool _isLoadingWallet = false;
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
     _loadBookingCount();
+    _loadWalletInfo();
   }
 
   Future<void> _loadProfile() async {
@@ -51,6 +55,209 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _refreshProfile() async {
     await _loadProfile();
     await _loadBookingCount();
+    await _loadWalletInfo();
+  }
+
+  Future<void> _loadWalletInfo() async {
+    setState(() {
+      _isLoadingWallet = true;
+    });
+
+    try {
+      final walletData = await ApiService.getWalletInfo();
+      if (mounted) {
+        setState(() {
+          _walletBalance = (walletData['balance'] ?? walletData['amount'] ?? 0.0).toDouble();
+          _isLoadingWallet = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading wallet: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingWallet = false;
+        });
+      }
+    }
+  }
+
+  String _formatCurrency(double value) {
+    if (value <= 0) return '0 VNĐ';
+    final raw = value.toStringAsFixed(0);
+    final buffer = StringBuffer();
+    for (int i = 0; i < raw.length; i++) {
+      buffer.write(raw[i]);
+      final position = raw.length - i - 1;
+      if (position % 3 == 0 && position != 0) {
+        buffer.write(',');
+      }
+    }
+    return '${buffer.toString()} VNĐ';
+  }
+
+  Future<void> _showTopupDialog() async {
+    final amountController = TextEditingController();
+    
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.account_balance_wallet, color: Colors.green),
+            SizedBox(width: 8),
+            Text('Nạp tiền vào ví'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Nhập số tiền bạn muốn nạp vào ví',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: amountController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Số tiền (VNĐ)',
+                hintText: 'Nhập số tiền',
+                prefixIcon: const Icon(Icons.attach_money),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _buildQuickAmountButton(amountController, 50000),
+                const SizedBox(width: 8),
+                _buildQuickAmountButton(amountController, 100000),
+                const SizedBox(width: 8),
+                _buildQuickAmountButton(amountController, 200000),
+                const SizedBox(width: 8),
+                _buildQuickAmountButton(amountController, 500000),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Hủy'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final amountText = amountController.text.trim();
+              if (amountText.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Vui lòng nhập số tiền'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+                return;
+              }
+
+              final amount = double.tryParse(amountText);
+              if (amount == null || amount <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Số tiền không hợp lệ'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+
+              Navigator.pop(context);
+              await _processTopup(amount);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Nạp tiền'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickAmountButton(TextEditingController controller, int amount) {
+    return Expanded(
+      child: OutlinedButton(
+        onPressed: () {
+          controller.text = amount.toString();
+        },
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+        ),
+        child: Text(
+          '${(amount / 1000).toStringAsFixed(0)}k',
+          style: const TextStyle(fontSize: 12),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _processTopup(double amount) async {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    try {
+      final paymentUrl = await ApiService.topupWallet(amount: amount);
+      
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading dialog
+
+      // Open PayOS URL
+      final uri = Uri.parse(paymentUrl);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Đang chuyển đến trang thanh toán PayOS...'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Không thể mở liên kết thanh toán'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading dialog
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Lỗi khi nạp tiền: ${e.toString().replaceFirst('Exception: ', '')}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _loadBookingCount() async {
@@ -223,6 +430,92 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ],
+                        const SizedBox(height: 16),
+                        // Wallet Card
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.green[400]!,
+                                Colors.green[600]!,
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.green.withOpacity(0.3),
+                                blurRadius: 10,
+                                offset: const Offset(0, 5),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Row(
+                                    children: [
+                                      Icon(Icons.account_balance_wallet, color: Colors.white, size: 24),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'Số dư ví',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  IconButton(
+                                    onPressed: _loadWalletInfo,
+                                    icon: const Icon(Icons.refresh, color: Colors.white),
+                                    tooltip: 'Làm mới',
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              _isLoadingWallet
+                                  ? const SizedBox(
+                                      height: 24,
+                                      child: Center(
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                    )
+                                  : Text(
+                                      _formatCurrency(_walletBalance),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 28,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed: _showTopupDialog,
+                                  icon: const Icon(Icons.add_circle_outline),
+                                  label: const Text('Nạp tiền'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: Colors.green[700],
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         const SizedBox(height: 16),
                         // Stats
                         Row(

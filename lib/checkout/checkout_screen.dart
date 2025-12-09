@@ -1,16 +1,27 @@
 import 'package:flutter/material.dart';
 import '../models/booking_cart_item.dart';
 import '../services/api_service.dart';
+import '../screens/contract/contract_signing_screen.dart';
 import '../screens/payment/payment_screen.dart';
 
 // Validation result class
 class _ValidationResult {
   final bool hasConflict;
   final String message;
+  final String? cameraName;
+  final DateTime? existingPickupDate;
+  final DateTime? existingReturnDate;
+  final DateTime? recommendedPickupDate;
+  final DateTime? recommendedReturnDate;
 
   _ValidationResult({
     required this.hasConflict,
     required this.message,
+    this.cameraName,
+    this.existingPickupDate,
+    this.existingReturnDate,
+    this.recommendedPickupDate,
+    this.recommendedReturnDate,
   });
 }
 
@@ -282,13 +293,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           _isSubmitting = false;
           _dateConflictMessage = conflictResult.message;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(conflictResult.message),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 5),
-          ),
-        );
+        // Show popup with detailed information and recommendations
+        _showConflictDialog(conflictResult);
         return;
       }
     } catch (e) {
@@ -306,7 +312,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         district: _addressController.text.trim(),
         pickupAt: _pickupDate!,
         returnAt: _returnDate!,
-        customerAddress: _addressController.text.trim(),
+        customerAddress: _addressController.text.trim().isEmpty 
+            ? null 
+            : _addressController.text.trim(),
         notes: _notesController.text.trim().isEmpty
             ? null
             : _notesController.text.trim(),
@@ -327,17 +335,56 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       debugPrint('CheckoutScreen: Payment ID: ${bookingData['paymentId']}');
       debugPrint('CheckoutScreen: Payment URL: ${bookingData['paymentUrl']}');
 
-      // Điều hướng đến màn hình thanh toán
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => PaymentScreen(
-            bookingData: bookingData,
-            totalAmount: widget.totalAmount,
-            depositAmount: widget.depositAmount,
+      // Extract contractId from booking data
+      String? contractId;
+      
+      // Try to get contractId from various possible locations
+      if (bookingData.containsKey('contractId')) {
+        contractId = bookingData['contractId']?.toString();
+      } else if (bookingData.containsKey('contract')) {
+        final contract = bookingData['contract'];
+        if (contract is Map<String, dynamic>) {
+          contractId = contract['id']?.toString();
+        }
+      } else if (bookingData.containsKey('contracts')) {
+        final contracts = bookingData['contracts'];
+        if (contracts is List && contracts.isNotEmpty) {
+          final firstContract = contracts.first;
+          if (firstContract is Map<String, dynamic>) {
+            contractId = firstContract['id']?.toString();
+          }
+        }
+      }
+      
+      debugPrint('CheckoutScreen: Contract ID: $contractId');
+
+      // Điều hướng đến màn hình ký hợp đồng nếu có contractId
+      if (contractId != null && contractId.isNotEmpty) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ContractSigningScreen(
+              contractId: contractId!,
+              bookingData: bookingData,
+              totalAmount: widget.totalAmount,
+              depositAmount: widget.depositAmount,
+            ),
           ),
-        ),
-      );
+        );
+      } else {
+        // Nếu không có contractId, đi thẳng đến payment (fallback)
+        debugPrint('CheckoutScreen: No contractId found, going directly to payment');
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PaymentScreen(
+              bookingData: bookingData,
+              totalAmount: widget.totalAmount,
+              depositAmount: widget.depositAmount,
+            ),
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       final errorMsg = e.toString().replaceFirst('Exception: ', '');
@@ -348,16 +395,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ? 'Camera đã được đặt vào khoảng thời gian đã chọn. Vui lòng chọn ngày khác.'
             : null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isConflict
-                ? 'Vui lòng chọn ngày khác vì thời gian hiện tại bị trùng lịch.'
-                : errorMsg,
+      
+      // If it's a conflict error, try to parse and show popup
+      if (isConflict) {
+        await _handleBackendConflictError(errorMsg);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMsg),
+            backgroundColor: Colors.red,
           ),
-          backgroundColor: isConflict ? Colors.orange : Colors.red,
-        ),
-      );
+        );
+      }
     }
   }
 
@@ -420,10 +469,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           // Direct overlap check
           if (normalizedPickup.isBefore(normalizedExistingReturn.add(Duration(days: delayDays))) &&
               normalizedReturn.isAfter(normalizedExistingPickup.subtract(Duration(days: delayDays)))) {
+            // Calculate recommended dates
+            final rentalDays = normalizedReturn.difference(normalizedPickup).inDays;
+            DateTime? recommendedPickup;
+            DateTime? recommendedReturn;
+            
+            // If new booking is before existing, recommend dates before existing
+            if (normalizedReturn.isBefore(normalizedExistingPickup)) {
+              recommendedReturn = normalizedExistingPickup.subtract(Duration(days: minGapDays));
+              recommendedPickup = recommendedReturn.subtract(Duration(days: rentalDays));
+            } else {
+              // If new booking is after existing, recommend dates after existing
+              recommendedPickup = normalizedExistingReturn.add(Duration(days: minGapDays));
+              recommendedReturn = recommendedPickup.add(Duration(days: rentalDays));
+            }
+            
             return _ValidationResult(
               hasConflict: true,
-              message: '${cartItem.cameraName} đã được đặt từ ${_formatDate(existingPickup)} đến ${_formatDate(existingReturn)}. '
-                  'Vui lòng chọn ngày khác (cần cách ít nhất ${minGapDays} ngày).',
+              message: '${cartItem.cameraName} đã được đặt từ ${_formatDate(existingPickup)} đến ${_formatDate(existingReturn)}.',
+              cameraName: cartItem.cameraName,
+              existingPickupDate: existingPickup,
+              existingReturnDate: existingReturn,
+              recommendedPickupDate: recommendedPickup,
+              recommendedReturnDate: recommendedReturn,
             );
           }
 
@@ -438,10 +506,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             // Need at least delayDays to receive the item + minGapDays gap = minGapDays total
             if (gapAfterExisting < minGapDays) {
               final earliestAvailable = normalizedExistingReturn.add(Duration(days: minGapDays));
+              final rentalDays = normalizedReturn.difference(normalizedPickup).inDays;
+              final recommendedReturn = earliestAvailable.add(Duration(days: rentalDays));
               return _ValidationResult(
                 hasConflict: true,
                 message: '${cartItem.cameraName} cần khoảng cách tối thiểu ${minGapDays} ngày sau khi trả (${_formatDate(existingReturn)}). '
                     'Ngày bắt đầu sớm nhất có thể: ${_formatDate(earliestAvailable)}.',
+                cameraName: cartItem.cameraName,
+                existingPickupDate: existingPickup,
+                existingReturnDate: existingReturn,
+                recommendedPickupDate: earliestAvailable,
+                recommendedReturnDate: recommendedReturn,
               );
             }
           }
@@ -450,10 +525,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             // Need at least delayDays after new return + minGapDays gap = minGapDays total
             if (gapBeforeExisting < minGapDays) {
               final latestAvailable = normalizedExistingPickup.subtract(Duration(days: minGapDays));
+              final rentalDays = normalizedReturn.difference(normalizedPickup).inDays;
+              final recommendedPickup = latestAvailable.subtract(Duration(days: rentalDays));
               return _ValidationResult(
                 hasConflict: true,
                 message: '${cartItem.cameraName} cần khoảng cách tối thiểu ${minGapDays} ngày trước khi bắt đầu đặt tiếp (${_formatDate(existingPickup)}). '
                     'Ngày kết thúc muộn nhất có thể: ${_formatDate(latestAvailable)}.',
+                cameraName: cartItem.cameraName,
+                existingPickupDate: existingPickup,
+                existingReturnDate: existingReturn,
+                recommendedPickupDate: recommendedPickup,
+                recommendedReturnDate: latestAvailable,
               );
             }
           }
@@ -462,10 +544,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           final newReturnWithDelay = normalizedReturn.add(Duration(days: delayDays));
           if (newReturnWithDelay.isAfter(normalizedExistingPickup) &&
               normalizedPickup.isBefore(normalizedExistingPickup)) {
+            final rentalDays = normalizedReturn.difference(normalizedPickup).inDays;
+            final recommendedPickup = normalizedExistingReturn.add(Duration(days: minGapDays));
+            final recommendedReturn = recommendedPickup.add(Duration(days: rentalDays));
             return _ValidationResult(
               hasConflict: true,
               message: '${cartItem.cameraName} không thể cho thuê từ ${_formatDate(pickupDate)} đến ${_formatDate(returnDate)} '
                   'vì sau khi trả (${_formatDate(returnDate.add(Duration(days: delayDays)))}) sẽ trùng với booking tiếp theo (${_formatDate(existingPickup)}).',
+              cameraName: cartItem.cameraName,
+              existingPickupDate: existingPickup,
+              existingReturnDate: existingReturn,
+              recommendedPickupDate: recommendedPickup,
+              recommendedReturnDate: recommendedReturn,
             );
           }
         }
@@ -485,7 +575,317 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         lower.contains('already booked') ||
         lower.contains('conflict') ||
         lower.contains('trùng') ||
-        lower.contains('overlap');
+        lower.contains('overlap') ||
+        lower.contains('is not available between');
+  }
+
+  Future<void> _handleBackendConflictError(String errorMsg) async {
+    try {
+      // Parse error message: "Item (id: 10c28341-cbf6-4596-9a49-348fce3121ba) is not available between 2026-01-01T10:00:00.0000000Z and 2026-01-02T18:00:00.0000000Z"
+      // Also handle: "Booking creation failed: Item (id: ...) is not available between ... and ..."
+      final itemIdMatch = RegExp(r'Item\s*\(id:\s*([a-f0-9-]+)\)', caseSensitive: false).firstMatch(errorMsg);
+      final betweenMatch = RegExp(r'between\s+([0-9TZ.:-]+)\s+and\s+([0-9TZ.:-]+)', caseSensitive: false).firstMatch(errorMsg);
+      
+      if (itemIdMatch == null || betweenMatch == null) {
+        // Cannot parse, show simple error
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lịch đặt đã bị trùng. Vui lòng chọn ngày khác.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      final itemId = itemIdMatch.group(1);
+      final unavailableStartStr = betweenMatch.group(1);
+      final unavailableEndStr = betweenMatch.group(2);
+
+      if (itemId == null || unavailableStartStr == null || unavailableEndStr == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lịch đặt đã bị trùng. Vui lòng chọn ngày khác.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Parse dates
+      DateTime? unavailableStart;
+      DateTime? unavailableEnd;
+      try {
+        unavailableStart = DateTime.parse(unavailableStartStr);
+        unavailableEnd = DateTime.parse(unavailableEndStr);
+      } catch (e) {
+        debugPrint('CheckoutScreen: Error parsing dates from error message: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lịch đặt đã bị trùng. Vui lòng chọn ngày khác.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Get item bookings to find the conflicting booking
+      List<Map<String, dynamic>> existingBookings;
+      String? cameraName;
+      
+      try {
+        existingBookings = await ApiService.getItemBookings(itemId);
+        
+        // Find camera name from cart items
+        for (final cartItem in widget.cartItems) {
+          if (cartItem.cameraId == itemId) {
+            cameraName = cartItem.cameraName;
+            break;
+          }
+        }
+        
+        // If not found in cart, try to get from first booking
+        if (cameraName == null && existingBookings.isNotEmpty) {
+          final firstBooking = existingBookings.first;
+          final items = firstBooking['items'];
+          if (items is List && items.isNotEmpty) {
+            final firstItem = items.first;
+            if (firstItem is Map<String, dynamic>) {
+              final camera = firstItem['camera'];
+              if (camera is Map<String, dynamic>) {
+                cameraName = camera['name']?.toString() ?? 'Sản phẩm';
+              }
+            }
+          }
+        }
+        
+        cameraName ??= 'Sản phẩm';
+      } catch (e) {
+        debugPrint('CheckoutScreen: Error getting item bookings: $e');
+        // Show popup with available info even if we can't get bookings
+        cameraName = 'Sản phẩm';
+        existingBookings = [];
+      }
+
+      // Find the booking that overlaps with unavailable dates
+      DateTime? existingPickup;
+      DateTime? existingReturn;
+      
+      for (final booking in existingBookings) {
+        final bookingPickupStr = booking['pickupAt']?.toString();
+        final bookingReturnStr = booking['returnAt']?.toString();
+        
+        if (bookingPickupStr == null || bookingReturnStr == null) continue;
+        
+        try {
+          final bookingPickup = DateTime.parse(bookingPickupStr);
+          final bookingReturn = DateTime.parse(bookingReturnStr);
+          
+          // Check if this booking overlaps with unavailable period
+          if (bookingPickup.isBefore(unavailableEnd) && bookingReturn.isAfter(unavailableStart)) {
+            existingPickup = bookingPickup;
+            existingReturn = bookingReturn;
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      // If we found a booking, use its dates, otherwise use unavailable dates
+      final conflictPickup = existingPickup ?? unavailableStart;
+      final conflictReturn = existingReturn ?? unavailableEnd;
+
+      // Calculate recommended dates
+      const int minGapDays = 7;
+      final rentalDays = _returnDate != null && _pickupDate != null
+          ? _returnDate!.difference(_pickupDate!).inDays
+          : 1;
+      
+      DateTime? recommendedPickup;
+      DateTime? recommendedReturn;
+      
+      // Recommend dates after the conflict
+      recommendedPickup = conflictReturn.add(Duration(days: minGapDays));
+      recommendedReturn = recommendedPickup.add(Duration(days: rentalDays));
+
+      // Show popup
+      final conflictResult = _ValidationResult(
+        hasConflict: true,
+        message: '$cameraName đã được đặt từ ${_formatDate(conflictPickup)} đến ${_formatDate(conflictReturn)}.',
+        cameraName: cameraName,
+        existingPickupDate: conflictPickup,
+        existingReturnDate: conflictReturn,
+        recommendedPickupDate: recommendedPickup,
+        recommendedReturnDate: recommendedReturn,
+      );
+      
+      _showConflictDialog(conflictResult);
+    } catch (e) {
+      debugPrint('CheckoutScreen: Error handling backend conflict: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Lịch đặt đã bị trùng. Vui lòng chọn ngày khác.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  void _showConflictDialog(_ValidationResult conflictResult) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.orange[700],
+              size: 28,
+            ),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Lịch đặt đã có',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (conflictResult.cameraName != null) ...[
+                Text(
+                  'Sản phẩm: ${conflictResult.cameraName}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (conflictResult.existingPickupDate != null &&
+                  conflictResult.existingReturnDate != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.orange.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.calendar_today,
+                        size: 20,
+                        color: Colors.orange[700],
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Đã được đặt từ ${_formatDate(conflictResult.existingPickupDate)} đến ${_formatDate(conflictResult.existingReturnDate)}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.orange[900],
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              if (conflictResult.recommendedPickupDate != null &&
+                  conflictResult.recommendedReturnDate != null) ...[
+                const Text(
+                  'Khuyến nghị chọn ngày:',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.green.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.check_circle_outline,
+                        size: 20,
+                        color: Colors.green[700],
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Từ ${_formatDate(conflictResult.recommendedPickupDate)} đến ${_formatDate(conflictResult.recommendedReturnDate)}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.green[900],
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else ...[
+                Text(
+                  conflictResult.message,
+                  style: const TextStyle(fontSize: 14),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: const Text('Đóng'),
+          ),
+          if (conflictResult.recommendedPickupDate != null &&
+              conflictResult.recommendedReturnDate != null)
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                setState(() {
+                  _pickupDate = conflictResult.recommendedPickupDate;
+                  _returnDate = conflictResult.recommendedReturnDate;
+                  _dateConflictMessage = null;
+                });
+              },
+              icon: const Icon(Icons.check, size: 18),
+              label: const Text('Chọn ngày này'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   @override

@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:app_links/app_links.dart';
 import 'screens/login/login_screen.dart';
 import 'screens/booking/booking_list_screen.dart';
+import 'screens/payment/payment_success_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -102,50 +103,18 @@ class _MyAppState extends State<MyApp> {
     debugPrint('MyApp: Handling payment success - Booking: $bookingId, Payment: $paymentId');
     
     // Backend should automatically update payment and booking status via PayOS webhook
-    // We just need to show success message and navigate to booking list
+    // Navigate to payment success screen
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final context = navigatorKey.currentContext;
       if (context != null) {
-        // Show success dialog
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            title: const Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.green, size: 28),
-                SizedBox(width: 8),
-                Text('Thanh toán thành công'),
-              ],
-            ),
-            content: const Text(
-              'Bạn đã thanh toán thành công. Đơn hàng của bạn đang được xử lý.',
-            ),
-            actions: [
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).pop(); // Close dialog
-                  
-                  // Navigate to booking list
-                  // The booking status should be automatically updated by backend via PayOS webhook
-                  // BookingListScreen will automatically refresh when navigated to
-                  Navigator.of(context).pushNamedAndRemoveUntil(
-                    '/bookings',
-                    (route) => false,
-                  );
-                },
-                icon: const Icon(Icons.list, size: 18),
-                label: const Text('Xem đơn hàng'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ],
-          ),
+        // Navigate to payment success screen
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/payment-success',
+          (route) => false,
+          arguments: {
+            'bookingId': bookingId,
+            'paymentId': paymentId,
+          },
         );
       }
     });
@@ -215,6 +184,15 @@ class _MyAppState extends State<MyApp> {
       debugShowCheckedModeBanner: false,
       routes: {
         '/bookings': (context) => const BookingListScreen(),
+        '/payment-success': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return PaymentSuccessScreen(
+            bookingId: args?['bookingId']?.toString(),
+            paymentId: args?['paymentId']?.toString(),
+            totalAmount: args?['totalAmount']?.toDouble(),
+            depositAmount: args?['depositAmount']?.toDouble(),
+          );
+        },
       },
     );
   }

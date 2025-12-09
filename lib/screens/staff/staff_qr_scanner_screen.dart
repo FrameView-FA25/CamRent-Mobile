@@ -42,8 +42,15 @@ class _StaffQrScannerScreenState extends State<StaffQrScannerScreen> {
     debugPrint('StaffQrScannerScreen: Scanned QR code: $code');
 
     try {
+      // Extract booking ID from QR code format: "booking:xxx" or just "xxx"
+      String bookingId = code;
+      if (code.startsWith('booking:')) {
+        bookingId = code.substring('booking:'.length);
+        debugPrint('StaffQrScannerScreen: Extracted booking ID: $bookingId');
+      }
+      
       // Get booking by ID from QR code
-      final bookingData = await ApiService.getBookingByQr(code);
+      final bookingData = await ApiService.getBookingByQr(bookingId);
       
       debugPrint('StaffQrScannerScreen: Booking data received: ${bookingData.keys.toList()}');
 
@@ -54,7 +61,7 @@ class _StaffQrScannerScreenState extends State<StaffQrScannerScreen> {
           MaterialPageRoute(
             builder: (context) => StaffBookingDetailScreen(
               bookingData: bookingData,
-              bookingId: code,
+              bookingId: bookingId,
             ),
           ),
         );

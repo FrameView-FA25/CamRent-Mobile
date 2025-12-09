@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1259,6 +1260,11 @@ class ApiService {
         cartId = cartData['cartId']?.toString() ?? cartData['id']?.toString();
       }
 
+      // Validate cartId is present
+      if (cartId == null || cartId.isEmpty) {
+        throw Exception('Không tìm thấy giỏ hàng. Vui lòng thêm sản phẩm vào giỏ hàng trước.');
+      }
+
       // Normalize pickup/return to UTC at fixed hours
       final normalizedPickup = DateTime.utc(
         pickupAt.year,
@@ -1280,23 +1286,19 @@ class ApiService {
         normalizedReturn = normalizedPickup.add(const Duration(days: 1));
       }
 
+      // Build location object according to API spec: only country, province, district
       final locationAddress = <String, dynamic>{
         'country': 'Vietnam',
-        'province': province,
-        'district': district,
+        'province': province.isNotEmpty ? province : 'Hà Nội',
+        'district': district.isNotEmpty ? district : '',
       };
 
+      // Build request body according to API spec: only location, pickupAt, returnAt
+      // Backend will get cartId from cart and customer info from authenticated user
       final requestBody = <String, dynamic>{
-        if (cartId != null && cartId.isNotEmpty) 'cartId': cartId,
         'location': locationAddress,
         'pickupAt': normalizedPickup.toIso8601String(),
         'returnAt': normalizedReturn.toIso8601String(),
-        'customerName': customerName,
-        'customerPhone': customerPhone,
-        'customerEmail': customerEmail,
-        if (customerAddress != null && customerAddress.isNotEmpty)
-          'customerAddress': customerAddress,
-        if (notes != null && notes.isNotEmpty) 'notes': notes,
       };
 
       debugPrint('Creating booking from cart with body: $requestBody');
@@ -1317,6 +1319,25 @@ class ApiService {
       if (bookingResponse.statusCode >= 400) {
         final errorMsg = _extractErrorMessage(bookingResponse.body);
         debugPrint('Booking creation failed: $errorMsg');
+        debugPrint('Request body sent: ${jsonEncode(requestBody)}');
+        debugPrint('Response body: ${bookingResponse.body}');
+        debugPrint('Response status: ${bookingResponse.statusCode}');
+        
+        // Handle specific null reference error
+        if (errorMsg != null && 
+            (errorMsg.toLowerCase().contains('object reference') ||
+             errorMsg.toLowerCase().contains('null reference') ||
+             errorMsg.toLowerCase().contains('not set to an instance'))) {
+          throw Exception(
+            'Lỗi hệ thống: Dữ liệu không đầy đủ hoặc thiếu thông tin bắt buộc.\n'
+            'Vui lòng kiểm tra lại:\n'
+            '- Thông tin khách hàng (tên, số điện thoại, email)\n'
+            '- Địa chỉ và tỉnh/thành phố\n'
+            '- Ngày thuê và trả\n'
+            'Nếu lỗi vẫn tiếp tục, vui lòng liên hệ hỗ trợ.'
+          );
+        }
+        
         throw Exception(
           errorMsg ?? 
           'Không thể tạo đơn đặt hàng (Status: ${bookingResponse.statusCode})',
@@ -1324,15 +1345,11 @@ class ApiService {
       }
 
       // Try to extract booking ID from response
-      String? bookingId;
+      // cartId is guaranteed to be non-null at this point due to validation above
+      String bookingId = cartId; // Start with cartId as default
       Map<String, dynamic> bookingData;
       
-      // IMPORTANT: If cart ID is the same as booking ID, use cartId as bookingId
-      // This is the primary method since backend uses cartId as bookingId
-      if (cartId != null && cartId.isNotEmpty) {
-        bookingId = cartId;
-        debugPrint('createBookingFromCart: Using cartId as bookingId: $bookingId');
-      }
+      debugPrint('createBookingFromCart: Using cartId as initial bookingId: $bookingId');
       
       // First, try to parse response as JSON
       try {
@@ -1352,38 +1369,35 @@ class ApiService {
       }
       
       // Try to extract bookingId from response body string if it contains UUID
-      if ((bookingId == null || bookingId.isEmpty) && bookingResponse.body.isNotEmpty) {
+      if (bookingId == cartId && bookingResponse.body.isNotEmpty) {
         // Look for UUID pattern in response body
         final uuidPattern = RegExp(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}', caseSensitive: false);
         final matches = uuidPattern.allMatches(bookingResponse.body);
         if (matches.isNotEmpty) {
           // Use the first UUID found (likely the bookingId)
-          bookingId = matches.first.group(0);
+          bookingId = matches.first.group(0) ?? cartId;
           debugPrint('createBookingFromCart: Extracted bookingId from response body string: $bookingId');
         }
       }
       
-      // Final fallback: use cartId if still no bookingId
-      if ((bookingId == null || bookingId.isEmpty) && cartId != null && cartId.isNotEmpty) {
-        bookingId = cartId;
-        debugPrint('createBookingFromCart: Using cartId as final fallback for bookingId: $bookingId');
-      }
-      
       // If bookingId not in response, try to get from Location header
-      if ((bookingId == null || bookingId.isEmpty) && bookingResponse.headers.containsKey('location')) {
+      if (bookingId == cartId && bookingResponse.headers.containsKey('location')) {
         final location = bookingResponse.headers['location'];
         if (location != null && location.isNotEmpty) {
           // Extract ID from URL like /Bookings/{id} or /api/Bookings/{id}
           final uriMatch = RegExp(r'/(?:Bookings|bookings)/([a-f0-9-]+)', caseSensitive: false).firstMatch(location);
           if (uriMatch != null) {
-            bookingId = uriMatch.group(1);
-            debugPrint('Extracted bookingId from Location header: $bookingId');
+            final extractedId = uriMatch.group(1);
+            if (extractedId != null && extractedId.isNotEmpty) {
+              bookingId = extractedId;
+              debugPrint('Extracted bookingId from Location header: $bookingId');
+            }
           }
         }
       }
       
       // If still no bookingId, try to get the latest booking
-      if (bookingId == null || bookingId.isEmpty) {
+      if (bookingId.isEmpty) {
         debugPrint('BookingId not found in response, trying to get latest booking...');
         try {
           final bookingsRaw = await getBookings();
@@ -1421,10 +1435,11 @@ class ApiService {
               
               // Get ID from the most recent booking
               final latestBooking = bookings.first;
-              bookingId = latestBooking['id']?.toString() ?? 
+              final extractedId = latestBooking['id']?.toString() ?? 
                           latestBooking['_id']?.toString();
               
-              if (bookingId != null && bookingId.isNotEmpty) {
+              if (extractedId != null && extractedId.isNotEmpty) {
+                bookingId = extractedId;
                 debugPrint('Found bookingId from latest booking: $bookingId');
                 // Update bookingData with full booking info
                 bookingData = {
@@ -1471,7 +1486,7 @@ class ApiService {
             while (retryCount < maxRetries && paymentId == null) {
               try {
                 paymentId = await createPaymentAuthorization(
-                  bookingId: bookingId,
+              bookingId: bookingId,
                   mode: 'Deposit', // Default mode is "Deposit"
                 );
                 debugPrint('createBookingFromCart: Payment authorization created: $paymentId');
@@ -1511,13 +1526,13 @@ class ApiService {
               debugPrint('createBookingFromCart: Initializing PayOS payment with amount: $paymentAmount');
               try {
                 paymentUrl = await initializePayOSPayment(
-                  paymentId: paymentId,
-                  amount: paymentAmount,
-                  description: paymentDescription ?? 
-                            'Thanh toán đặt cọc cho đơn hàng $bookingId',
+                paymentId: paymentId,
+                amount: paymentAmount,
+                description: paymentDescription ?? 
+                          'Thanh toán đặt cọc cho đơn hàng $bookingId',
                   returnUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=success',
                   cancelUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=cancel',
-                );
+              );
                 debugPrint('createBookingFromCart: PayOS payment URL created: ${paymentUrl.isNotEmpty ? "yes" : "no"}');
               } catch (e) {
                 debugPrint('createBookingFromCart: Failed to initialize PayOS payment: $e');
@@ -1548,8 +1563,8 @@ class ApiService {
           debugPrint('createBookingFromCart: WARNING - Cannot create payment - bookingId is null or empty');
           // Return booking data even without payment
           return result;
+          }
         }
-      }
       
       // Return booking data with bookingId if available
       debugPrint('createBookingFromCart: Returning booking data without payment (createPayment=false)');
@@ -1568,51 +1583,89 @@ class ApiService {
     required double amount,
     String? description,
   }) async {
-    try {
-      debugPrint('getPaymentUrlFromBookingId: Getting payment URL for bookingId: $bookingId');
-      
-      // Step 1: Create payment authorization
-      final paymentId = await createPaymentAuthorization(
-        bookingId: bookingId,
-        mode: mode ?? 'Deposit',
-      );
-      
-      debugPrint('getPaymentUrlFromBookingId: Payment ID created: $paymentId');
-      
-      // Step 2: Initialize PayOS payment and get URL
-      final paymentUrl = await initializePayOSPayment(
-        paymentId: paymentId,
-        amount: amount,
-        description: description ?? 'Thanh toán đặt cọc cho đơn hàng $bookingId',
-        returnUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=success',
-        cancelUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=cancel',
-      );
-      
-      debugPrint('getPaymentUrlFromBookingId: Payment URL received: ${paymentUrl.isNotEmpty ? "yes" : "no"}');
-      if (paymentUrl.isNotEmpty) {
-        debugPrint('getPaymentUrlFromBookingId: Payment URL: $paymentUrl');
-      } else {
-        debugPrint('getPaymentUrlFromBookingId: WARNING - Payment URL is empty!');
+    int maxRetries = 5; // Increased retries
+    int initialDelay = 3; // Initial delay before first attempt
+    int retryDelay = 3; // Increased delay between retries
+    
+    // Initial delay to give backend time to process contract signing
+    debugPrint('getPaymentUrlFromBookingId: Waiting ${initialDelay}s before first attempt...');
+    await Future.delayed(Duration(seconds: initialDelay));
+    
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        debugPrint('getPaymentUrlFromBookingId: Getting payment URL for bookingId: $bookingId (attempt $attempt/$maxRetries)');
+        
+        // Step 1: Create payment authorization
+        String paymentId;
+        try {
+          paymentId = await createPaymentAuthorization(
+            bookingId: bookingId,
+            mode: mode ?? 'Deposit',
+          );
+        } catch (e) {
+          final errorMsg = e.toString().toLowerCase();
+          // If it's a null reference error and not the last attempt, retry
+          if ((errorMsg.contains('object reference') || 
+               errorMsg.contains('null reference') ||
+               errorMsg.contains('chưa sẵn sàng')) && 
+              attempt < maxRetries) {
+            final delay = retryDelay * attempt; // Exponential backoff
+            debugPrint('getPaymentUrlFromBookingId: Retryable error on attempt $attempt, waiting ${delay}s before retry...');
+            await Future.delayed(Duration(seconds: delay));
+            continue; // Retry
+          }
+          rethrow; // If it's not retryable or last attempt, throw
+        }
+        
+        debugPrint('getPaymentUrlFromBookingId: Payment ID created: $paymentId');
+        
+        // Step 2: Initialize PayOS payment and get URL
+        final paymentUrl = await initializePayOSPayment(
+          paymentId: paymentId,
+          amount: amount,
+          description: description ?? 'Thanh toán đặt cọc cho đơn hàng $bookingId',
+          returnUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=success',
+          cancelUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=cancel',
+        );
+        
+        debugPrint('getPaymentUrlFromBookingId: Payment URL received: ${paymentUrl.isNotEmpty ? "yes" : "no"}');
+        if (paymentUrl.isNotEmpty) {
+          debugPrint('getPaymentUrlFromBookingId: Payment URL: $paymentUrl');
+          return paymentUrl;
+        } else {
+          debugPrint('getPaymentUrlFromBookingId: WARNING - Payment URL is empty!');
+          if (attempt < maxRetries) {
+            debugPrint('getPaymentUrlFromBookingId: Retrying...');
+            await Future.delayed(Duration(seconds: retryDelay));
+            continue;
+          }
+          throw Exception('Không nhận được URL thanh toán từ server');
+        }
+      } catch (e) {
+        debugPrint('getPaymentUrlFromBookingId: Error on attempt $attempt: $e');
+        if (attempt == maxRetries) {
+          debugPrint('getPaymentUrlFromBookingId: All attempts failed');
+          rethrow;
+        }
+        // Wait before retry
+        await Future.delayed(Duration(seconds: retryDelay));
       }
-      return paymentUrl;
-    } catch (e) {
-      debugPrint('getPaymentUrlFromBookingId: Error: $e');
-      rethrow;
     }
+    
+    throw Exception('Không thể lấy URL thanh toán sau $maxRetries lần thử');
   }
 
   static Future<String> createPaymentAuthorization({
     required String bookingId,
-    String? mode,
+    String? mode, // Mode is not sent to API, kept for backward compatibility
   }) async {
     try {
-      // Mode: Default to "Deposit" for deposit payments
+      // According to API spec, only bookingId is required
       final requestBody = <String, dynamic>{
         'bookingId': bookingId,
-        'mode': mode ?? 'Deposit', // Default mode is "Deposit"
       };
       
-      debugPrint('createPaymentAuthorization: Using mode: ${requestBody['mode']}');
+      debugPrint('createPaymentAuthorization: Mode parameter (not sent): ${mode ?? 'Deposit'}');
       
       debugPrint('Creating payment authorization for booking: $bookingId');
       debugPrint('Request body: $requestBody');
@@ -1642,14 +1695,14 @@ class ApiService {
           if (decoded is String) {
             paymentId = decoded;
           } else if (decoded is Map<String, dynamic>) {
-            // Or return as object with id field
+          // Or return as object with id field
             paymentId = decoded['id']?.toString() ?? 
                        decoded['paymentId']?.toString();
             if (paymentId == null || paymentId.isEmpty) {
-              throw Exception('Payment ID not found in response');
-            }
+            throw Exception('Payment ID not found in response');
+          }
           } else {
-            // Fallback: return as string
+          // Fallback: return as string
             paymentId = decoded.toString();
           }
           
@@ -1678,6 +1731,12 @@ class ApiService {
       final errorMsg = _extractErrorMessage(body);
       debugPrint('Payment authorization failed: $errorMsg');
       
+      // Check for null reference errors (common backend issue)
+      if (statusCode == 500 && (body.toLowerCase().contains('object reference') || 
+                                body.toLowerCase().contains('null reference'))) {
+        throw Exception('Booking chưa sẵn sàng để thanh toán. Vui lòng đợi vài giây rồi thử lại hoặc liên hệ hỗ trợ.');
+      }
+      
       // Provide user-friendly error messages
       String userFriendlyMsg;
       if (statusCode == 500) {
@@ -1692,10 +1751,10 @@ class ApiService {
         userFriendlyMsg = errorMsg ?? 'Thông tin thanh toán không hợp lệ. Vui lòng kiểm tra lại.';
       } else {
         userFriendlyMsg = errorMsg ?? 'Không thể tạo thanh toán (Status: $statusCode)';
-      }
-      
+          }
+          
       throw Exception(userFriendlyMsg);
-    } catch (e) {
+        } catch (e) {
       throw Exception('Failed to create payment authorization: ${e.toString()}');
     }
   }
@@ -2038,7 +2097,11 @@ class ApiService {
   // Get booking by QR code (booking ID)
   static Future<Map<String, dynamic>> getBookingByQr(String bookingId) async {
     try {
-      final cleanedId = bookingId.replaceAll('"', '').replaceAll("'", '').trim();
+      // Extract booking ID from format "booking:xxx" or just "xxx"
+      String cleanedId = bookingId.replaceAll('"', '').replaceAll("'", '').trim();
+      if (cleanedId.startsWith('booking:')) {
+        cleanedId = cleanedId.substring('booking:'.length);
+      }
       debugPrint('getBookingByQr: Getting booking with ID: $cleanedId');
 
       final response = await http.get(
@@ -2574,6 +2637,228 @@ class ApiService {
     }
   }
 
+  /// Lấy hợp đồng PDF preview theo contractId
+  /// 
+  /// Endpoint: GET /api/Contracts/{contractId}/preview
+  /// 
+  /// Returns: Uint8List - PDF file bytes
+  static Future<Uint8List> getContractPreview({
+    required String contractId,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('Vui lòng đăng nhập để xem hợp đồng');
+      }
+
+      final endpoint = '$baseUrl/Contracts/$contractId/preview';
+      debugPrint('getContractPreview: Calling endpoint: $endpoint');
+
+      final response = await http.get(
+        Uri.parse(endpoint),
+        headers: await _getHeaders(requiresAuth: true),
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Kết nối quá lâu. Vui lòng thử lại');
+        },
+      );
+
+      final statusCode = response.statusCode;
+      debugPrint('getContractPreview: Response status: $statusCode');
+
+      if (statusCode == 401) {
+        throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại');
+      }
+
+      if (statusCode == 404) {
+        throw Exception('Không tìm thấy hợp đồng');
+      }
+
+      if (statusCode >= 200 && statusCode < 300) {
+        final contentType = response.headers['content-type'] ?? '';
+        debugPrint('getContractPreview: Content-Type: $contentType');
+        
+        if (contentType.contains('application/pdf') || 
+            contentType.contains('application/octet-stream') ||
+            response.bodyBytes.isNotEmpty) {
+          debugPrint('getContractPreview: Successfully retrieved PDF (${response.bodyBytes.length} bytes)');
+          return response.bodyBytes;
+        } else {
+          throw Exception('Định dạng file không hợp lệ. Vui lòng thử lại.');
+        }
+      }
+
+      final errorMsg = _extractErrorMessage(response.body);
+      throw Exception(errorMsg ?? 'Không thể tải hợp đồng (Lỗi: $statusCode)');
+    } catch (e) {
+      debugPrint('getContractPreview: Exception - ${e.toString()}');
+      if (e is Exception) {
+        rethrow;
+      }
+      throw Exception('Không thể tải hợp đồng: ${e.toString()}');
+    }
+  }
+
+  /// Lấy thông tin hợp đồng theo contractId
+  /// 
+  /// Endpoint: GET /api/Contracts/{contractId}
+  /// 
+  /// Returns: Map với thông tin hợp đồng (bao gồm trạng thái đã ký)
+  static Future<Map<String, dynamic>> getContractInfo({
+    required String contractId,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('Vui lòng đăng nhập để xem hợp đồng');
+      }
+
+      final endpoint = '$baseUrl/Contracts/$contractId';
+      debugPrint('getContractInfo: Calling endpoint: $endpoint');
+
+      final response = await http.get(
+        Uri.parse(endpoint),
+        headers: await _getHeaders(requiresAuth: true),
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Kết nối quá lâu. Vui lòng thử lại');
+        },
+      );
+
+      final statusCode = response.statusCode;
+      debugPrint('getContractInfo: Response status: $statusCode');
+
+      if (statusCode == 401) {
+        throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại');
+      }
+
+      if (statusCode == 404) {
+        throw Exception('Không tìm thấy hợp đồng');
+      }
+
+      if (statusCode >= 200 && statusCode < 300) {
+        final data = _handleResponse(response);
+        debugPrint('getContractInfo: Successfully retrieved contract info');
+        return data;
+      }
+
+      final errorMsg = _extractErrorMessage(response.body);
+      throw Exception(errorMsg ?? 'Không thể lấy thông tin hợp đồng (Lỗi: $statusCode)');
+    } catch (e) {
+      debugPrint('getContractInfo: Exception - ${e.toString()}');
+      if (e is Exception) {
+        rethrow;
+      }
+      throw Exception('Không thể lấy thông tin hợp đồng: ${e.toString()}');
+    }
+  }
+
+  /// Lấy hợp đồng PDF đã ký theo contractId
+  /// 
+  /// Endpoint: GET /api/Contracts/{contractId} với Accept: application/pdf
+  /// 
+  /// Returns: Uint8List - PDF file bytes (có chữ ký nếu đã ký)
+  static Future<Uint8List> getContractPdf({
+    required String contractId,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('Vui lòng đăng nhập để xem hợp đồng');
+      }
+
+      final endpoint = '$baseUrl/Contracts/$contractId';
+      debugPrint('getContractPdf: Calling endpoint: $endpoint');
+
+      // Get headers and add Accept header for PDF
+      final headers = await _getHeaders(requiresAuth: true);
+      headers['Accept'] = 'application/pdf';
+
+      final response = await http.get(
+        Uri.parse(endpoint),
+        headers: headers,
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Kết nối quá lâu. Vui lòng thử lại');
+        },
+      );
+
+      final statusCode = response.statusCode;
+      debugPrint('getContractPdf: Response status: $statusCode');
+
+      if (statusCode == 401) {
+        throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại');
+      }
+
+      if (statusCode == 404) {
+        throw Exception('Không tìm thấy hợp đồng');
+      }
+
+      if (statusCode >= 200 && statusCode < 300) {
+        final contentType = response.headers['content-type'] ?? '';
+        debugPrint('getContractPdf: Content-Type: $contentType');
+        debugPrint('getContractPdf: Response body length: ${response.bodyBytes.length}');
+        
+        // Check if response is JSON (contract info) or PDF
+        if (contentType.contains('application/json')) {
+          // If JSON, try to get signedFileUrl or use preview endpoint
+          try {
+            final contractData = jsonDecode(response.body) as Map<String, dynamic>;
+            final signedFileUrl = contractData['signedFileUrl']?.toString();
+            
+            if (signedFileUrl != null && signedFileUrl.isNotEmpty) {
+              debugPrint('getContractPdf: Found signedFileUrl, downloading: $signedFileUrl');
+              // Download PDF from signedFileUrl
+              final pdfResponse = await http.get(
+                Uri.parse(signedFileUrl),
+              ).timeout(
+                const Duration(seconds: 30),
+                onTimeout: () {
+                  throw Exception('Kết nối quá lâu. Vui lòng thử lại');
+                },
+              );
+              
+              if (pdfResponse.statusCode >= 200 && pdfResponse.statusCode < 300) {
+                debugPrint('getContractPdf: Successfully downloaded signed PDF (${pdfResponse.bodyBytes.length} bytes)');
+                return pdfResponse.bodyBytes;
+              }
+            }
+            
+            // If no signedFileUrl, use preview endpoint
+            debugPrint('getContractPdf: No signedFileUrl found, using preview endpoint');
+            return await getContractPreview(contractId: contractId);
+          } catch (e) {
+            debugPrint('getContractPdf: Error parsing contract info: $e');
+            // Fallback to preview
+            return await getContractPreview(contractId: contractId);
+          }
+        }
+        
+        // If response is PDF
+        if (contentType.contains('application/pdf') || 
+            contentType.contains('application/octet-stream') ||
+            response.bodyBytes.isNotEmpty) {
+          debugPrint('getContractPdf: Successfully retrieved PDF (${response.bodyBytes.length} bytes)');
+          return response.bodyBytes;
+        } else {
+          throw Exception('Định dạng file không hợp lệ. Vui lòng thử lại.');
+        }
+      }
+
+      final errorMsg = _extractErrorMessage(response.body);
+      throw Exception(errorMsg ?? 'Không thể tải hợp đồng (Lỗi: $statusCode)');
+    } catch (e) {
+      debugPrint('getContractPdf: Exception - ${e.toString()}');
+      if (e is Exception) {
+        rethrow;
+      }
+      throw Exception('Không thể tải hợp đồng: ${e.toString()}');
+    }
+  }
+
   /// Ký hợp đồng (contract)
   /// 
   /// Endpoint: POST /api/Contracts/{contractId}/sign
@@ -2641,6 +2926,159 @@ class ApiService {
         rethrow;
       }
       throw Exception('Không thể ký hợp đồng: ${e.toString()}');
+    }
+  }
+
+  /// Lấy thông tin ví của người dùng hiện tại
+  /// 
+  /// Endpoint: GET /api/Wallets/me
+  /// 
+  /// Returns: Map với thông tin ví (balance, etc.)
+  static Future<Map<String, dynamic>> getWalletInfo() async {
+    try {
+      final token = await _getToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('Vui lòng đăng nhập để xem ví');
+      }
+
+      final endpoint = '$baseUrl/Wallets/me';
+      debugPrint('getWalletInfo: Calling endpoint: $endpoint');
+
+      final response = await http.get(
+        Uri.parse(endpoint),
+        headers: await _getHeaders(requiresAuth: true),
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Kết nối quá lâu. Vui lòng thử lại');
+        },
+      );
+
+      final statusCode = response.statusCode;
+      debugPrint('getWalletInfo: Response status: $statusCode');
+
+      if (statusCode == 401) {
+        throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại');
+      }
+
+      if (statusCode == 404) {
+        throw Exception('Không tìm thấy ví');
+      }
+
+      if (statusCode >= 200 && statusCode < 300) {
+        final data = _handleResponse(response);
+        debugPrint('getWalletInfo: Successfully retrieved wallet info');
+        return data;
+      }
+
+      final errorMsg = _extractErrorMessage(response.body);
+      throw Exception(errorMsg ?? 'Không thể lấy thông tin ví (Lỗi: $statusCode)');
+    } catch (e) {
+      debugPrint('getWalletInfo: Exception - ${e.toString()}');
+      if (e is Exception) {
+        rethrow;
+      }
+      throw Exception('Không thể lấy thông tin ví: ${e.toString()}');
+    }
+  }
+
+  /// Nạp tiền vào ví qua PayOS
+  /// 
+  /// Endpoint: POST /api/Wallets/topup
+  /// 
+  /// Body: { "amount": number }
+  /// 
+  /// Returns: String - PayOS payment URL
+  static Future<String> topupWallet({
+    required double amount,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('Vui lòng đăng nhập để nạp tiền');
+      }
+
+      if (amount <= 0) {
+        throw Exception('Số tiền nạp phải lớn hơn 0');
+      }
+
+      final endpoint = '$baseUrl/Wallets/topup';
+      debugPrint('topupWallet: Calling endpoint: $endpoint');
+      debugPrint('topupWallet: Amount: $amount');
+
+      final requestBody = jsonEncode({
+        'amount': amount,
+      });
+
+      final response = await http.post(
+        Uri.parse(endpoint),
+        headers: await _getHeaders(requiresAuth: true),
+        body: requestBody,
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Kết nối quá lâu. Vui lòng thử lại');
+        },
+      );
+
+      final statusCode = response.statusCode;
+      final body = response.body;
+      debugPrint('topupWallet: Response status: $statusCode');
+      debugPrint('topupWallet: Response body: ${body.isNotEmpty ? (body.length > 500 ? "${body.substring(0, 500)}..." : body) : "empty"}');
+
+      if (statusCode == 401) {
+        throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại');
+      }
+
+      if (statusCode >= 200 && statusCode < 300) {
+        if (body.isEmpty) {
+          throw Exception('Không nhận được URL thanh toán từ server');
+        }
+
+        try {
+          // API may return payment URL string directly (as JSON string)
+          final decoded = jsonDecode(body);
+          String? paymentUrl;
+
+          if (decoded is String) {
+            paymentUrl = decoded.replaceAll('"', '').replaceAll("'", '').trim();
+          } else if (decoded is Map<String, dynamic>) {
+            // Try multiple possible field names for payment URL
+            paymentUrl = decoded['url']?.toString() ??
+                        decoded['paymentUrl']?.toString() ??
+                        decoded['payosUrl']?.toString() ??
+                        decoded['checkoutUrl']?.toString() ??
+                        decoded['payosCheckoutUrl']?.toString() ??
+                        decoded['link']?.toString() ??
+                        decoded['paymentLink']?.toString();
+          }
+
+          if (paymentUrl != null && paymentUrl.isNotEmpty) {
+            final cleanedUrl = paymentUrl.replaceAll('"', '').replaceAll("'", '').trim();
+            debugPrint('topupWallet: Payment URL received: $cleanedUrl');
+            return cleanedUrl;
+          } else {
+            throw Exception('Không tìm thấy URL thanh toán trong phản hồi');
+          }
+        } catch (e) {
+          debugPrint('topupWallet: Error parsing response: $e');
+          // Try using body as string directly
+          final trimmedBody = body.trim();
+          if (trimmedBody.startsWith('"') && trimmedBody.endsWith('"')) {
+            return trimmedBody.substring(1, trimmedBody.length - 1);
+          }
+          return trimmedBody;
+        }
+      }
+
+      final errorMsg = _extractErrorMessage(body);
+      throw Exception(errorMsg ?? 'Không thể nạp tiền (Lỗi: $statusCode)');
+    } catch (e) {
+      debugPrint('topupWallet: Exception - ${e.toString()}');
+      if (e is Exception) {
+        rethrow;
+      }
+      throw Exception('Không thể nạp tiền: ${e.toString()}');
     }
   }
 }

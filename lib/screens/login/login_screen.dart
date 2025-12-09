@@ -12,28 +12,17 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
+class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
-  late AnimationController _cameraRotationController;
-
-  @override
-  void initState() {
-    super.initState();
-    _cameraRotationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )..repeat();
-  }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
-    _cameraRotationController.dispose();
     super.dispose();
   }
 
@@ -126,36 +115,45 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const SizedBox(height: 40),
-                    // Logo/Icon máy ảnh quay với container nổi bật
+                    // Logo CamRent
                     Center(
-                      child: RotationTransition(
-                        turns: Tween<double>(begin: 0, end: 1).animate(
-                          CurvedAnimation(
-                            parent: _cameraRotationController,
-                            curve: Curves.linear,
-                          ),
-                        ),
-                        child: Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.25),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.4),
-                              width: 2,
+                      child: Container(
+                        width: 200,
+                        height: 200,
+                        decoration: BoxDecoration(
+                          color: Colors.transparent,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 15,
+                              offset: const Offset(0, 5),
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.camera_alt_rounded,
-                            color: Colors.white,
-                            size: 60,
+                          ],
+                        ),
+                        child: ClipOval(
+                          child: Image.asset(
+                            'assets/images/camrent_logo.png',
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              // Fallback to icon if image not found
+                              return Container(
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.25),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.4),
+                                    width: 2,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.camera_alt_rounded,
+                                  color: Colors.white,
+                                  size: 80,
+                                ),
+                              );
+                            },
                           ),
                         ),
                       ),
@@ -181,17 +179,37 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              // Main title with elegant serif font
-                              Text(
-                                'CAMERA FOR RENT',
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.cinzel(
-                                  fontSize: 36,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                  letterSpacing: 3.0,
-                                  height: 1.2,
-                                ),
+                              // Main title with elegant serif font and black stroke
+                              Stack(
+                                children: [
+                                  // Black stroke/outline - thicker for better visibility
+                                  Text(
+                                    'CAMERA FOR RENT',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.cinzel(
+                                      fontSize: 36,
+                                      fontWeight: FontWeight.w700,
+                                      foreground: Paint()
+                                        ..style = PaintingStyle.stroke
+                                        ..strokeWidth = 5
+                                        ..color = Colors.black,
+                                      letterSpacing: 3.0,
+                                      height: 1.2,
+                                    ),
+                                  ),
+                                  // White fill text on top
+                                  Text(
+                                    'CAMERA FOR RENT',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.cinzel(
+                                      fontSize: 36,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                      letterSpacing: 3.0,
+                                      height: 1.2,
+                                    ),
+                                  ),
+                                ],
                               ),
                               const SizedBox(height: 8),
                               // Decorative underline effect
