@@ -1293,20 +1293,33 @@ class ApiService {
         'district': district.isNotEmpty ? district : '',
       };
 
-      // Build request body according to API spec: only location, pickupAt, returnAt
-      // Backend will get cartId from cart and customer info from authenticated user
+      // Build request body according to API spec: location, pickupAt, returnAt
+      // Also include cartId to help backend find the cart
       final requestBody = <String, dynamic>{
         'location': locationAddress,
         'pickupAt': normalizedPickup.toIso8601String(),
         'returnAt': normalizedReturn.toIso8601String(),
       };
+      
+      // Add cartId to request body if available (some backends may need it)
+      if (cartId != null && cartId.isNotEmpty) {
+        requestBody['cartId'] = cartId;
+      }
 
       debugPrint('Creating booking from cart with body: $requestBody');
       debugPrint('createBookingFromCart: CartId being sent: $cartId');
       debugPrint('createBookingFromCart: Cart items count before booking: ${cartItemsRaw.length}');
       debugPrint('createBookingFromCart: Cart items structure: ${cartItemsRaw.map((item) => item is Map ? item.keys.toList() : item.runtimeType).toList()}');
+      
+      // Build URL with cartId as query parameter if available
+      Uri bookingUrl = Uri.parse('$baseUrl/Bookings');
+      if (cartId != null && cartId.isNotEmpty) {
+        bookingUrl = bookingUrl.replace(queryParameters: {'cartId': cartId});
+        debugPrint('createBookingFromCart: Added cartId to query parameter: $cartId');
+      }
+      
       final bookingResponse = await http.post(
-        Uri.parse('$baseUrl/Bookings'),
+        bookingUrl,
         headers: await _getHeaders(requiresAuth: true),
         body: jsonEncode(requestBody),
       );
@@ -1354,15 +1367,42 @@ class ApiService {
       // First, try to parse response as JSON
       try {
         bookingData = _handleResponse(bookingResponse);
-        // Try to get bookingId from response, but cartId takes priority
+        debugPrint('createBookingFromCart: Parsed bookingData keys: ${bookingData.keys.toList()}');
+        debugPrint('createBookingFromCart: Full bookingData: $bookingData');
+        
+        // Try to get bookingId from response - prioritize 'id' field
         final responseBookingId = bookingData['id']?.toString() ?? 
                    bookingData['bookingId']?.toString() ??
                    bookingData['_id']?.toString();
         if (responseBookingId != null && responseBookingId.isNotEmpty) {
           bookingId = responseBookingId;
           debugPrint('createBookingFromCart: Found bookingId in response: $bookingId');
+        } else {
+          debugPrint('createBookingFromCart: WARNING - No bookingId found in response, using cartId: $cartId');
         }
-        debugPrint('createBookingFromCart: Parsed bookingData keys: ${bookingData.keys.toList()}');
+        
+        // Ensure bookingId is in bookingData
+        if (bookingId.isNotEmpty && !bookingData.containsKey('id')) {
+          bookingData['id'] = bookingId;
+          bookingData['bookingId'] = bookingId;
+        }
+        
+        // Log contracts array if present
+        if (bookingData.containsKey('contracts')) {
+          final contracts = bookingData['contracts'];
+          debugPrint('createBookingFromCart: Contracts found: ${contracts is List ? (contracts as List).length : "not a list"}');
+          if (contracts is List) {
+            debugPrint('createBookingFromCart: Contracts array: $contracts');
+          }
+        }
+        
+        // Log status if present
+        if (bookingData.containsKey('status')) {
+          debugPrint('createBookingFromCart: Booking status: ${bookingData['status']}');
+        }
+        if (bookingData.containsKey('statusText')) {
+          debugPrint('createBookingFromCart: Booking statusText: ${bookingData['statusText']}');
+        }
       } catch (e) {
         debugPrint('Failed to parse booking response as JSON: $e');
         bookingData = {'success': true, 'message': bookingResponse.body};
@@ -1390,7 +1430,7 @@ class ApiService {
             final extractedId = uriMatch.group(1);
             if (extractedId != null && extractedId.isNotEmpty) {
               bookingId = extractedId;
-              debugPrint('Extracted bookingId from Location header: $bookingId');
+            debugPrint('Extracted bookingId from Location header: $bookingId');
             }
           }
         }
@@ -1487,7 +1527,8 @@ class ApiService {
               try {
                 paymentId = await createPaymentAuthorization(
               bookingId: bookingId,
-                  mode: 'Deposit', // Default mode is "Deposit"
+                  mode: 1, // PaymentType.Deposit = 1
+                  method: 1, // PaymentMethod.PayOs = 1
                 );
                 debugPrint('createBookingFromCart: Payment authorization created: $paymentId');
                 break; // Success, exit retry loop
@@ -1522,10 +1563,11 @@ class ApiService {
             // Initialize PayOS payment if amount is provided
             // PayOS is the primary payment method for this system
             String? paymentUrl;
+            String? returnedPaymentId;
             if (paymentAmount != null && paymentAmount > 0) {
               debugPrint('createBookingFromCart: Initializing PayOS payment with amount: $paymentAmount');
               try {
-                paymentUrl = await initializePayOSPayment(
+                final paymentResult = await initializePayOSPayment(
                 paymentId: paymentId,
                 amount: paymentAmount,
                 description: paymentDescription ?? 
@@ -1533,7 +1575,11 @@ class ApiService {
                   returnUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=success',
                   cancelUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=cancel',
               );
-                debugPrint('createBookingFromCart: PayOS payment URL created: ${paymentUrl.isNotEmpty ? "yes" : "no"}');
+                // Extract paymentId and redirectUrl from Map
+                returnedPaymentId = paymentResult['paymentId']?.toString();
+                paymentUrl = paymentResult['redirectUrl']?.toString();
+                debugPrint('createBookingFromCart: PayOS payment URL created: ${paymentUrl?.isNotEmpty ?? false ? "yes" : "no"}');
+                debugPrint('createBookingFromCart: Returned paymentId: $returnedPaymentId');
               } catch (e) {
                 debugPrint('createBookingFromCart: Failed to initialize PayOS payment: $e');
                 // Continue without payment URL - payment can still be processed later
@@ -1541,7 +1587,7 @@ class ApiService {
             }
             
             // Merge payment info into booking data
-            result['paymentId'] = paymentId;
+            result['paymentId'] = returnedPaymentId ?? paymentId;
             if (paymentUrl != null && paymentUrl.isNotEmpty) {
               result['paymentUrl'] = paymentUrl;
               debugPrint('createBookingFromCart: Payment URL saved to bookingData: $paymentUrl');
@@ -1577,7 +1623,8 @@ class ApiService {
   // Payment APIs
   // Get payment URL directly from booking ID (simplified flow)
   // This method combines createPaymentAuthorization + initializePayOSPayment
-  static Future<String> getPaymentUrlFromBookingId({
+  // Returns Map with 'paymentId' and 'paymentUrl' (redirectUrl)
+  static Future<Map<String, dynamic>> getPaymentUrlFromBookingId({
     required String bookingId,
     String? mode,
     required double amount,
@@ -1594,13 +1641,27 @@ class ApiService {
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         debugPrint('getPaymentUrlFromBookingId: Getting payment URL for bookingId: $bookingId (attempt $attempt/$maxRetries)');
-        
-        // Step 1: Create payment authorization
+      
+      // Step 1: Create payment authorization
         String paymentId;
         try {
+          // Convert mode string to int if provided
+          int? modeInt;
+          if (mode != null) {
+            if (mode.toLowerCase() == 'deposit') {
+              modeInt = 1; // PaymentType.Deposit
+            } else if (mode.toLowerCase() == 'rental') {
+              modeInt = 2; // PaymentType.Rental
+            } else {
+              // Try to parse as int
+              modeInt = int.tryParse(mode);
+            }
+          }
+          
           paymentId = await createPaymentAuthorization(
-            bookingId: bookingId,
-            mode: mode ?? 'Deposit',
+        bookingId: bookingId,
+            mode: modeInt ?? 1, // Default to Deposit (1)
+            method: 1, // Default to PayOs (1)
           );
         } catch (e) {
           final errorMsg = e.toString().toLowerCase();
@@ -1616,37 +1677,45 @@ class ApiService {
           }
           rethrow; // If it's not retryable or last attempt, throw
         }
-        
-        debugPrint('getPaymentUrlFromBookingId: Payment ID created: $paymentId');
-        
-        // Step 2: Initialize PayOS payment and get URL
-        final paymentUrl = await initializePayOSPayment(
-          paymentId: paymentId,
-          amount: amount,
-          description: description ?? 'Thanh toán đặt cọc cho đơn hàng $bookingId',
-          returnUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=success',
-          cancelUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=cancel',
-        );
-        
-        debugPrint('getPaymentUrlFromBookingId: Payment URL received: ${paymentUrl.isNotEmpty ? "yes" : "no"}');
-        if (paymentUrl.isNotEmpty) {
-          debugPrint('getPaymentUrlFromBookingId: Payment URL: $paymentUrl');
-          return paymentUrl;
-        } else {
-          debugPrint('getPaymentUrlFromBookingId: WARNING - Payment URL is empty!');
+      
+      debugPrint('getPaymentUrlFromBookingId: Payment ID created: $paymentId');
+      
+      // Step 2: Initialize PayOS payment and get URL
+      final paymentResult = await initializePayOSPayment(
+        paymentId: paymentId,
+        amount: amount,
+        description: description ?? 'Thanh toán đặt cọc cho đơn hàng $bookingId',
+        returnUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=success',
+        cancelUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=cancel',
+      );
+      
+      // Extract redirectUrl from Map response
+      final paymentUrl = paymentResult['redirectUrl']?.toString() ?? '';
+      final returnedPaymentId = paymentResult['paymentId']?.toString() ?? paymentId;
+      
+      debugPrint('getPaymentUrlFromBookingId: Payment URL received: ${paymentUrl.isNotEmpty ? "yes" : "no"}');
+      debugPrint('getPaymentUrlFromBookingId: Returned paymentId: $returnedPaymentId');
+      if (paymentUrl.isNotEmpty) {
+        debugPrint('getPaymentUrlFromBookingId: Payment URL: $paymentUrl');
+          return {
+            'paymentId': returnedPaymentId,
+            'paymentUrl': paymentUrl,
+          };
+      } else {
+        debugPrint('getPaymentUrlFromBookingId: WARNING - Payment URL is empty!');
           if (attempt < maxRetries) {
             debugPrint('getPaymentUrlFromBookingId: Retrying...');
             await Future.delayed(Duration(seconds: retryDelay));
             continue;
-          }
+      }
           throw Exception('Không nhận được URL thanh toán từ server');
         }
-      } catch (e) {
+    } catch (e) {
         debugPrint('getPaymentUrlFromBookingId: Error on attempt $attempt: $e');
         if (attempt == maxRetries) {
           debugPrint('getPaymentUrlFromBookingId: All attempts failed');
-          rethrow;
-        }
+      rethrow;
+    }
         // Wait before retry
         await Future.delayed(Duration(seconds: retryDelay));
       }
@@ -1657,18 +1726,24 @@ class ApiService {
 
   static Future<String> createPaymentAuthorization({
     required String bookingId,
-    String? mode, // Mode is not sent to API, kept for backward compatibility
+    int? mode, // PaymentType: 1 = Deposit, 2 = Rental
+    int? method, // PaymentMethod: 1 = PayOs, 2 = Wallet
   }) async {
     try {
-      // According to API spec, only bookingId is required
+      // Build request body according to new API spec
+      // PaymentType: Deposit = 1, Rental = 2
+      // PaymentMethod: PayOs = 1, Wallet = 2
       final requestBody = <String, dynamic>{
         'bookingId': bookingId,
+        'mode': mode ?? 1, // Default to Deposit (1)
+        'method': method ?? 1, // Default to PayOs (1)
       };
       
-      debugPrint('createPaymentAuthorization: Mode parameter (not sent): ${mode ?? 'Deposit'}');
-      
-      debugPrint('Creating payment authorization for booking: $bookingId');
-      debugPrint('Request body: $requestBody');
+      debugPrint('createPaymentAuthorization: Creating payment authorization');
+      debugPrint('createPaymentAuthorization: bookingId: $bookingId');
+      debugPrint('createPaymentAuthorization: mode (PaymentType): ${requestBody['mode']} (${requestBody['mode'] == 1 ? 'Deposit' : 'Rental'})');
+      debugPrint('createPaymentAuthorization: method (PaymentMethod): ${requestBody['method']} (${requestBody['method'] == 1 ? 'PayOs' : 'Wallet'})');
+      debugPrint('createPaymentAuthorization: Request body: $requestBody');
       
       final response = await http.post(
         Uri.parse('$baseUrl/Payments/authorize'),
@@ -1779,7 +1854,12 @@ class ApiService {
   }
 
   // Initialize PayOS payment
-  static Future<String> initializePayOSPayment({
+  /// Initialize PayOS payment and get payment link
+  /// 
+  /// Backend now returns: { "paymentId": "id", "redirectUrl": "url" }
+  /// 
+  /// Returns: Map with 'paymentId' and 'redirectUrl'
+  static Future<Map<String, dynamic>> initializePayOSPayment({
     required String paymentId,
     required double amount,
     String? description,
@@ -1820,76 +1900,39 @@ class ApiService {
         }
         
         try {
-          // API may return payment URL string directly (as JSON string)
-          final decoded = jsonDecode(body);
+          final decoded = jsonDecode(body) as Map<String, dynamic>;
           debugPrint('initializePayOSPayment: Decoded type: ${decoded.runtimeType}');
+          debugPrint('initializePayOSPayment: Decoded keys: ${decoded.keys.toList()}');
           
-          if (decoded is String) {
-            final cleanedUrl = decoded.replaceAll('"', '').replaceAll("'", '').trim();
-            debugPrint('initializePayOSPayment: Found URL as string: $cleanedUrl');
-            return cleanedUrl;
+          // Backend returns: { "paymentId": "id", "redirectUrl": "url" }
+          final result = <String, dynamic>{};
+          
+          // Extract paymentId
+          final returnedPaymentId = decoded['paymentId']?.toString() ?? 
+                                   decoded['id']?.toString() ?? 
+                                   cleanedPaymentId;
+          result['paymentId'] = returnedPaymentId.replaceAll('"', '').replaceAll("'", '').trim();
+          
+          // Extract redirectUrl
+          final redirectUrl = decoded['redirectUrl']?.toString() ?? 
+                             decoded['url']?.toString() ??
+                             decoded['paymentUrl']?.toString() ??
+                             decoded['payosUrl']?.toString() ??
+                             decoded['checkoutUrl']?.toString();
+          
+          if (redirectUrl != null && redirectUrl.isNotEmpty) {
+            result['redirectUrl'] = redirectUrl.replaceAll('"', '').replaceAll("'", '').trim();
+          } else {
+            throw Exception('redirectUrl not found in response');
           }
           
-          // Or return as object with url field
-          if (decoded is Map<String, dynamic>) {
-            debugPrint('initializePayOSPayment: Decoded is Map, keys: ${decoded.keys.toList()}');
-            
-            // Try multiple possible field names for payment URL
-            final urlFields = [
-              'url',
-              'paymentUrl',
-              'payosUrl',
-              'checkoutUrl',
-              'payosCheckoutUrl',
-              'link',
-              'paymentLink',
-              'redirectUrl',
-              'redirect_url',
-              'checkout_url',
-              'payment_url',
-            ];
-            
-            for (final field in urlFields) {
-              final value = decoded[field];
-              if (value != null) {
-                final urlString = value.toString().replaceAll('"', '').replaceAll("'", '').trim();
-                if (urlString.isNotEmpty && (urlString.startsWith('http://') || urlString.startsWith('https://'))) {
-                  debugPrint('initializePayOSPayment: Found URL in field "$field": $urlString');
-                  return urlString;
-                }
-              }
-            }
-            
-            // Log all values for debugging
-            debugPrint('initializePayOSPayment: No valid URL found. All values:');
-            decoded.forEach((key, value) {
-              debugPrint('  $key: ${value.toString().length > 100 ? "${value.toString().substring(0, 100)}..." : value}');
-            });
-            
-            return '';
-          }
+          debugPrint('initializePayOSPayment: Extracted paymentId: ${result['paymentId']}');
+          debugPrint('initializePayOSPayment: Extracted redirectUrl: ${result['redirectUrl']}');
           
-          // Fallback: return as string
-          final urlString = decoded.toString().replaceAll('"', '').replaceAll("'", '').trim();
-          debugPrint('initializePayOSPayment: Using decoded as string: $urlString');
-          return urlString;
+          return result;
         } catch (e) {
           debugPrint('initializePayOSPayment: JSON decode error: $e');
-          // If JSON decode fails, try using body as string directly
-          // (in case API returns plain string without JSON encoding)
-          final trimmedBody = body.trim();
-          debugPrint('initializePayOSPayment: Trying body as string: $trimmedBody');
-          
-          if (trimmedBody.startsWith('"') && trimmedBody.endsWith('"')) {
-            // Remove JSON string quotes
-            final urlString = trimmedBody.substring(1, trimmedBody.length - 1).replaceAll('"', '').replaceAll("'", '').trim();
-            debugPrint('initializePayOSPayment: Extracted URL from quoted string: $urlString');
-            return urlString;
-          }
-          
-          final cleanedBody = trimmedBody.replaceAll('"', '').replaceAll("'", '').trim();
-          debugPrint('initializePayOSPayment: Using trimmed body: $cleanedBody');
-          return cleanedBody;
+          throw Exception('Không thể đọc phản hồi từ server: ${e.toString()}');
         }
       }
 
@@ -1930,7 +1973,11 @@ class ApiService {
               if (existingUrl != null && existingUrl.isNotEmpty) {
                 final cleanedUrl = existingUrl.replaceAll('"', '').replaceAll("'", '').trim();
                 debugPrint('initializePayOSPayment: Found existing payment URL: $cleanedUrl');
-                return cleanedUrl;
+                // Return Map format
+                return {
+                  'paymentId': cleanedPaymentId,
+                  'redirectUrl': cleanedUrl,
+                };
               } else {
                 debugPrint('initializePayOSPayment: No URL found in payment data');
                 debugPrint('initializePayOSPayment: Payment data sample: ${paymentData.toString().substring(0, paymentData.toString().length > 500 ? 500 : paymentData.toString().length)}');
@@ -1974,6 +2021,74 @@ class ApiService {
         rethrow;
       }
       throw Exception('Không thể khởi tạo thanh toán PayOS: ${e.toString().replaceFirst('Exception: ', '')}');
+    }
+  }
+
+  /// Lấy trạng thái thanh toán theo paymentId
+  /// 
+  /// Endpoint: GET /api/Payments/{id}/status
+  /// 
+  /// Returns: Map với thông tin:
+  ///   - paymentId: ID của payment
+  ///   - paymentStatus: Trạng thái thanh toán
+  ///   - bookingId: ID của booking
+  ///   - bookingStatus: Trạng thái booking
+  ///   - authorizedAmount: Số tiền đã ủy quyền
+  ///   - capturedAmount: Số tiền đã thu
+  ///   - isPaid: Đã thanh toán hay chưa
+  static Future<Map<String, dynamic>> getPaymentStatus({
+    required String paymentId,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('Vui lòng đăng nhập để xem trạng thái thanh toán');
+      }
+
+      // Clean payment ID: remove surrounding quotes
+      final cleanedPaymentId = paymentId.replaceAll('"', '').replaceAll("'", '').trim();
+      
+      final endpoint = '$baseUrl/Payments/$cleanedPaymentId/status';
+      debugPrint('getPaymentStatus: Calling endpoint: $endpoint');
+      debugPrint('getPaymentStatus: paymentId: $cleanedPaymentId');
+
+      final response = await http.get(
+        Uri.parse(endpoint),
+        headers: await _getHeaders(requiresAuth: true),
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Kết nối quá lâu. Vui lòng thử lại');
+        },
+      );
+
+      final statusCode = response.statusCode;
+      debugPrint('getPaymentStatus: Response status: $statusCode');
+
+      if (statusCode == 401) {
+        throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại');
+      }
+
+      if (statusCode == 404) {
+        throw Exception('Không tìm thấy thông tin thanh toán');
+      }
+
+      if (statusCode >= 200 && statusCode < 300) {
+        final data = _handleResponse(response);
+        debugPrint('getPaymentStatus: Successfully retrieved payment status');
+        debugPrint('getPaymentStatus: Payment status: ${data['paymentStatus']}');
+        debugPrint('getPaymentStatus: Is paid: ${data['isPaid']}');
+        return data;
+      }
+
+      final errorMsg = _extractErrorMessage(response.body);
+      throw Exception(errorMsg ?? 'Không thể lấy trạng thái thanh toán (Lỗi: $statusCode)');
+    } catch (e) {
+      debugPrint('getPaymentStatus: Exception - ${e.toString()}');
+      if (e is Exception) {
+        rethrow;
+      }
+      throw Exception('Không thể lấy trạng thái thanh toán: ${e.toString()}');
     }
   }
 
@@ -2677,16 +2792,86 @@ class ApiService {
 
       if (statusCode >= 200 && statusCode < 300) {
         final contentType = response.headers['content-type'] ?? '';
+        final contentDisposition = response.headers['content-disposition'] ?? '';
         debugPrint('getContractPreview: Content-Type: $contentType');
+        debugPrint('getContractPreview: Content-Disposition: $contentDisposition');
         
-        if (contentType.contains('application/pdf') || 
-            contentType.contains('application/octet-stream') ||
-            response.bodyBytes.isNotEmpty) {
+        // Backend returns PDF bytes directly via File(pdfBytes, MediaTypeNames.Application.Pdf, fileName)
+        // This sets Content-Type: application/pdf and may include Content-Disposition header
+        
+        // Check if response is PDF file (most common case)
+        if (contentType.contains('application/pdf')) {
+          if (response.bodyBytes.isEmpty) {
+            throw Exception('File PDF rỗng. Vui lòng thử lại.');
+          }
           debugPrint('getContractPreview: Successfully retrieved PDF (${response.bodyBytes.length} bytes)');
+          if (contentDisposition.isNotEmpty) {
+            debugPrint('getContractPreview: PDF file with Content-Disposition: $contentDisposition');
+          }
           return response.bodyBytes;
-        } else {
-          throw Exception('Định dạng file không hợp lệ. Vui lòng thử lại.');
         }
+        
+        // Fallback: Check for octet-stream or Content-Disposition header
+        if (contentType.contains('application/octet-stream') ||
+            contentDisposition.toLowerCase().contains('filename') ||
+            contentDisposition.toLowerCase().contains('attachment')) {
+          if (response.bodyBytes.isEmpty) {
+            throw Exception('File rỗng. Vui lòng thử lại.');
+          }
+          debugPrint('getContractPreview: Successfully retrieved file as octet-stream (${response.bodyBytes.length} bytes)');
+          return response.bodyBytes;
+        }
+        
+        // Check if response is JSON (might contain download URL - for backward compatibility)
+        if (contentType.contains('application/json')) {
+          try {
+            final jsonData = jsonDecode(response.body);
+            debugPrint('getContractPreview: Response is JSON: $jsonData');
+            
+            // Check for download URL in response
+            String? downloadUrl;
+            if (jsonData is Map<String, dynamic>) {
+              downloadUrl = jsonData['downloadUrl']?.toString() ?? 
+                           jsonData['url']?.toString() ?? 
+                           jsonData['fileUrl']?.toString() ??
+                           jsonData['previewUrl']?.toString();
+            }
+            
+            if (downloadUrl != null && downloadUrl.isNotEmpty) {
+              debugPrint('getContractPreview: Found download URL: $downloadUrl');
+              // Download file from URL
+              final downloadResponse = await http.get(
+                Uri.parse(downloadUrl),
+                headers: await _getHeaders(requiresAuth: true),
+              ).timeout(
+                const Duration(seconds: 60),
+                onTimeout: () {
+                  throw Exception('Tải file quá lâu. Vui lòng thử lại');
+                },
+              );
+              
+              if (downloadResponse.statusCode >= 200 && downloadResponse.statusCode < 300) {
+                debugPrint('getContractPreview: Successfully downloaded PDF from URL (${downloadResponse.bodyBytes.length} bytes)');
+                return downloadResponse.bodyBytes;
+              } else {
+                throw Exception('Không thể tải file từ URL: ${downloadResponse.statusCode}');
+              }
+            } else {
+              throw Exception('Không tìm thấy URL download trong response');
+            }
+          } catch (e) {
+            debugPrint('getContractPreview: Error parsing JSON or downloading: $e');
+            throw Exception('Không thể xử lý response từ server: ${e.toString()}');
+          }
+        }
+        
+        // Final fallback: if we have bytes, try to use them
+        if (response.bodyBytes.isNotEmpty) {
+          debugPrint('getContractPreview: Using response bytes as PDF (${response.bodyBytes.length} bytes)');
+          return response.bodyBytes;
+        }
+        
+        throw Exception('Định dạng file không hợp lệ. Content-Type: $contentType');
       }
 
       final errorMsg = _extractErrorMessage(response.body);

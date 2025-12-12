@@ -11,8 +11,6 @@ class _ValidationResult {
   final String? cameraName;
   final DateTime? existingPickupDate;
   final DateTime? existingReturnDate;
-  final DateTime? recommendedPickupDate;
-  final DateTime? recommendedReturnDate;
 
   _ValidationResult({
     required this.hasConflict,
@@ -20,8 +18,6 @@ class _ValidationResult {
     this.cameraName,
     this.existingPickupDate,
     this.existingReturnDate,
-    this.recommendedPickupDate,
-    this.recommendedReturnDate,
   });
 }
 
@@ -66,11 +62,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _isSubmitting = false;
   bool _isLoadingProfile = true;
   String? _dateConflictMessage;
+  // Map: itemId -> List of date ranges (pickupAt, returnAt)
+  Map<String, List<Map<String, DateTime>>> _bookedDateRanges = {};
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
+    _loadAllBookings();
   }
 
   @override
@@ -97,6 +96,89 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return '${buffer.toString()} VNĐ';
   }
 
+  // Tính toán số tiền thanh toán dựa trên công thức mới
+  Map<String, double> _getCalculationDetails() {
+    try {
+      // Kiểm tra có đủ thông tin không
+      if (widget.cartItems.isEmpty || _pickupDate == null || _returnDate == null) {
+        return {
+          'baseTotal': widget.totalAmount,
+          'platformFee': 0.0,
+          'platformFeePercent': 0.0,
+          'paymentAmount': widget.depositAmount > 0 ? widget.depositAmount : widget.totalAmount,
+          'remainingAmount': 0.0,
+        };
+      }
+
+      // Tính số ngày thuê
+      final rentalDays = _returnDate!.difference(_pickupDate!).inDays;
+      if (rentalDays <= 0) {
+        return {
+          'baseTotal': widget.totalAmount,
+          'platformFee': 0.0,
+          'platformFeePercent': 0.0,
+          'paymentAmount': widget.depositAmount > 0 ? widget.depositAmount : widget.totalAmount,
+          'remainingAmount': 0.0,
+        };
+      }
+
+      // Tính tổng giá thuê cơ bản từ tất cả items
+      double baseTotal = 0.0;
+      double platformFeePercent = 0.0;
+
+      for (final item in widget.cartItems) {
+        // Lấy platformFeePercent từ raw data hoặc mặc định 10%
+        double itemPlatformFeePercent = 10.0; // Mặc định 10%
+        
+        // Thử lấy từ raw data
+        if (item.raw['camera'] is Map<String, dynamic>) {
+          final camera = item.raw['camera'] as Map<String, dynamic>;
+          final feePercent = camera['platformFeePercent'] ?? 
+                            camera['platform_fee_percent'] ?? 
+                            camera['feePercent'] ?? 
+                            camera['fee_percent'];
+          if (feePercent != null) {
+            itemPlatformFeePercent = (feePercent is num ? feePercent.toDouble() : double.tryParse(feePercent.toString()) ?? 10.0);
+          }
+        } else if (item.raw['platformFeePercent'] != null) {
+          final feePercent = item.raw['platformFeePercent'];
+          itemPlatformFeePercent = (feePercent is num ? feePercent.toDouble() : double.tryParse(feePercent.toString()) ?? 20.0);
+        }
+
+        // Tính baseTotal cho item này
+        final itemBaseTotal = rentalDays * item.pricePerDay * item.quantity;
+        baseTotal += itemBaseTotal;
+
+        // Lấy platformFeePercent từ item đầu tiên (giả sử tất cả items có cùng %)
+        if (platformFeePercent == 0.0) {
+          platformFeePercent = itemPlatformFeePercent;
+        }
+      }
+
+      // Tính phí nền tảng và số tiền thanh toán
+      final platformFee = baseTotal * (platformFeePercent / 100);
+      final remainingAmount = baseTotal - platformFee;
+      final paymentAmount = platformFee; // Số tiền thanh toán = phí nền tảng
+
+      return {
+        'baseTotal': baseTotal,
+        'platformFee': platformFee,
+        'platformFeePercent': platformFeePercent,
+        'paymentAmount': paymentAmount,
+        'remainingAmount': remainingAmount,
+      };
+    } catch (e) {
+      debugPrint('CheckoutScreen: Error calculating payment details: $e');
+      return {
+        'baseTotal': widget.totalAmount,
+        'platformFee': 0.0,
+        'platformFeePercent': 0.0,
+        'paymentAmount': widget.depositAmount > 0 ? widget.depositAmount : widget.totalAmount,
+        'remainingAmount': 0.0,
+      };
+    }
+  }
+
   String _formatDate(DateTime? date) {
     if (date == null) return 'Chưa chọn';
     return '${date.day.toString().padLeft(2, '0')}/'
@@ -105,28 +187,173 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<void> _selectDate({required bool isPickup}) async {
-    final now = DateTime.now();
-    final initial = isPickup
-        ? (_pickupDate ?? now)
-        : (_returnDate ?? (_pickupDate?.add(const Duration(days: 1)) ?? now.add(const Duration(days: 1))));
-    final firstDate = isPickup ? now : (_pickupDate ?? now.add(const Duration(days: 1)));
-    final picked = await showDatePicker(
+    try {
+      // Normalize dates to start of day for consistent comparison
+      final normalizeDate = (DateTime date) => DateTime(date.year, date.month, date.day);
+      
+      final now = normalizeDate(DateTime.now());
+      final lastDate = normalizeDate(DateTime.now().add(const Duration(days: 365)));
+      
+      // Calculate initial date and first date
+      DateTime initial;
+      DateTime firstDate;
+      
+      if (isPickup) {
+        // For pickup date: can select from today onwards
+        initial = _pickupDate != null ? normalizeDate(_pickupDate!) : now;
+        firstDate = now;
+      } else {
+        // For return date: must be after pickup date (or tomorrow if no pickup date)
+        if (_pickupDate != null) {
+          final pickupNormalized = normalizeDate(_pickupDate!);
+          firstDate = normalizeDate(pickupNormalized.add(const Duration(days: 1)));
+          initial = _returnDate != null 
+              ? normalizeDate(_returnDate!) 
+              : firstDate;
+        } else {
+          // No pickup date selected yet, default to tomorrow
+          firstDate = normalizeDate(now.add(const Duration(days: 1)));
+          initial = _returnDate != null 
+              ? normalizeDate(_returnDate!) 
+              : firstDate;
+        }
+      }
+      
+      // Ensure firstDate <= lastDate
+      if (firstDate.isAfter(lastDate)) {
+        debugPrint('CheckoutScreen: firstDate ($firstDate) is after lastDate ($lastDate), adjusting...');
+        firstDate = lastDate;
+      }
+      
+      // Ensure initialDate is within valid range
+      if (initial.isBefore(firstDate)) {
+        debugPrint('CheckoutScreen: initial ($initial) is before firstDate ($firstDate), adjusting...');
+        initial = firstDate;
+      } else if (initial.isAfter(lastDate)) {
+        debugPrint('CheckoutScreen: initial ($initial) is after lastDate ($lastDate), adjusting...');
+        initial = lastDate;
+      }
+      
+      // CRITICAL: Ensure initialDate satisfies selectableDayPredicate
+      // If the initial date is booked, find the next available date
+      if (_isDateBooked(initial)) {
+        debugPrint('CheckoutScreen: initial date ($initial) is booked, finding next available date...');
+        DateTime? nextAvailable;
+        for (var i = 0; i <= 365; i++) {
+          final candidate = normalizeDate(firstDate.add(Duration(days: i)));
+          if (candidate.isAfter(lastDate)) break;
+          if (!_isDateBooked(candidate)) {
+            nextAvailable = candidate;
+            break;
+          }
+        }
+        if (nextAvailable != null) {
+          initial = nextAvailable;
+          debugPrint('CheckoutScreen: Found next available date: $initial');
+        } else {
+          // If no available date found, use firstDate (even if it's booked, we'll handle it in the predicate)
+          initial = firstDate;
+          debugPrint('CheckoutScreen: No available date found, using firstDate: $initial');
+        }
+      }
+      
+      debugPrint('CheckoutScreen: Opening date picker - isPickup: $isPickup, firstDate: $firstDate, initial: $initial, lastDate: $lastDate');
+      
+      // Final validation: ensure initial date is selectable
+      final isInitialSelectable = !_isDateBooked(initial);
+      if (!isInitialSelectable) {
+        debugPrint('CheckoutScreen: WARNING - initial date ($initial) is still not selectable!');
+        // Try to find any selectable date in the range
+        for (var i = 0; i <= 365; i++) {
+          final candidate = normalizeDate(firstDate.add(Duration(days: i)));
+          if (candidate.isAfter(lastDate)) break;
+          if (!_isDateBooked(candidate)) {
+            initial = candidate;
+            debugPrint('CheckoutScreen: Found selectable date: $initial');
+            break;
+          }
+        }
+      }
+      
+      final picked = await showDatePicker(
       context: context,
       initialDate: initial,
       firstDate: firstDate,
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      lastDate: lastDate,
+      selectableDayPredicate: (DateTime date) {
+        // Hide/disable dates that are already booked
+        // Wrap in try-catch to prevent crashes
+        try {
+          return !_isDateBooked(date);
+        } catch (e) {
+          debugPrint('CheckoutScreen: Error in selectableDayPredicate: $e');
+          // If there's an error, allow the date to be selected (fail-safe)
+          return true;
+        }
+      },
+      helpText: isPickup ? 'Chọn ngày bắt đầu thuê' : 'Chọn ngày kết thúc thuê',
+      cancelText: 'Hủy',
+      confirmText: 'Chọn',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Theme.of(context).colorScheme.primary,
+              onPrimary: Colors.white,
+              onSurface: Colors.black87,
+              // Disable booked dates with a different color
+              onSurfaceVariant: Colors.grey[400]!,
+            ),
+            textTheme: Theme.of(context).textTheme.copyWith(
+              bodyLarge: TextStyle(color: Colors.black87),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
+    
     if (picked == null) return;
+    
+    // Normalize picked date to start of day for consistency
+    final pickedNormalized = DateTime(picked.year, picked.month, picked.day);
+    
+    // Double check if the selected date is booked (in case of race condition)
+    if (_isDateBooked(pickedNormalized)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ngày này đã được đặt. Vui lòng chọn ngày khác.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
     setState(() {
       if (isPickup) {
-        _pickupDate = picked;
-        if (_returnDate != null && _returnDate!.isBefore(picked)) {
+        _pickupDate = pickedNormalized;
+        if (_returnDate != null && _returnDate!.isBefore(pickedNormalized)) {
           _returnDate = null;
         }
       } else {
-        _returnDate = picked;
+        _returnDate = pickedNormalized;
       }
+      _dateConflictMessage = null;
     });
+    } catch (e, stackTrace) {
+      debugPrint('CheckoutScreen: Error in _selectDate: $e');
+      debugPrint('CheckoutScreen: Stack trace: $stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi khi chọn ngày: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildDateCard({
@@ -135,66 +362,64 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     required VoidCallback onTap,
     required IconData icon,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        debugPrint('CheckoutScreen: Date card tapped - label: $label');
+        onTap();
+      },
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey[300] ?? Colors.grey),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          side: BorderSide(color: Colors.grey[300] ?? Colors.grey),
         ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon,
+                  color: Theme.of(context).colorScheme.primary,
+                  size: 20,
+                ),
               ),
-              child: Icon(
-                icon,
-                color: Theme.of(context).colorScheme.primary,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[600],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[600],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _formatDate(date),
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
+                    const SizedBox(height: 4),
+                    Text(
+                      _formatDate(date),
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            Icon(
-              Icons.arrow_forward_ios_rounded,
-              size: 16,
-              color: Colors.grey[400],
-            ),
-          ],
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 16,
+                color: Colors.grey[400],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -236,6 +461,128 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       });
     }
   }
+
+  Future<void> _loadAllBookings() async {
+    try {
+      final bookings = await ApiService.getBookings();
+      if (!mounted) return;
+
+      // Process bookings to extract date ranges for each item
+      final bookedRanges = <String, List<Map<String, DateTime>>>{};
+
+      for (final booking in bookings) {
+        if (booking is! Map<String, dynamic>) continue;
+        
+        final items = booking['items'];
+        if (items is! List) continue;
+        
+        final pickupAtStr = booking['pickupAt']?.toString();
+        final returnAtStr = booking['returnAt']?.toString();
+
+        if (pickupAtStr == null || returnAtStr == null) continue;
+
+        DateTime? pickupAt;
+        DateTime? returnAt;
+
+        try {
+          pickupAt = DateTime.parse(pickupAtStr);
+          returnAt = DateTime.parse(returnAtStr);
+        } catch (e) {
+          debugPrint('CheckoutScreen: Error parsing booking dates: $e');
+          continue;
+        }
+
+        // Normalize to start of day
+        final normalizedPickup = DateTime(pickupAt.year, pickupAt.month, pickupAt.day);
+        final normalizedReturn = DateTime(returnAt.year, returnAt.month, returnAt.day);
+
+        // Add date range for each item in this booking
+        for (final item in items) {
+          if (item is! Map<String, dynamic>) continue;
+          
+          final itemId = item['itemId']?.toString() ?? 
+                        item['cameraId']?.toString() ?? 
+                        item['id']?.toString();
+          
+          if (itemId == null || itemId.isEmpty) continue;
+
+          if (!bookedRanges.containsKey(itemId)) {
+            bookedRanges[itemId] = [];
+          }
+
+          bookedRanges[itemId]!.add({
+            'pickupAt': normalizedPickup,
+            'returnAt': normalizedReturn,
+          });
+        }
+      }
+
+      setState(() {
+        _bookedDateRanges = bookedRanges;
+      });
+
+      debugPrint('CheckoutScreen: Loaded ${bookings.length} bookings');
+      debugPrint('CheckoutScreen: Booked date ranges for ${bookedRanges.length} items');
+    } catch (e) {
+      debugPrint('CheckoutScreen: Error loading bookings: $e');
+    }
+  }
+
+  /// Check if a date is within any booked date range for the items in cart
+  bool _isDateBooked(DateTime date, {String? specificItemId}) {
+    try {
+      final normalizedDate = DateTime(date.year, date.month, date.day);
+      
+      // If no booked ranges loaded yet, allow all dates
+      if (_bookedDateRanges.isEmpty) {
+        return false;
+      }
+      
+      // If specific item ID is provided, only check that item
+      final itemsToCheck = specificItemId != null 
+          ? [specificItemId]
+          : widget.cartItems
+              .map((item) => item.cameraId)
+              .where((id) => id.isNotEmpty)
+              .toList();
+
+      // If no items to check, allow the date
+      if (itemsToCheck.isEmpty) {
+        return false;
+      }
+
+      for (final itemId in itemsToCheck) {
+        final ranges = _bookedDateRanges[itemId];
+        if (ranges == null || ranges.isEmpty) {
+          continue;
+        }
+        
+        for (final range in ranges) {
+          final pickupAt = range['pickupAt'];
+          final returnAt = range['returnAt'];
+          
+          // Skip if range data is invalid
+          if (pickupAt == null || returnAt == null) {
+            continue;
+          }
+          
+          // Check if date is within the booked range (inclusive)
+          if (normalizedDate.isAtSameMomentAs(pickupAt) || 
+              normalizedDate.isAtSameMomentAs(returnAt) ||
+              (normalizedDate.isAfter(pickupAt) && normalizedDate.isBefore(returnAt))) {
+            return true;
+          }
+        }
+      }
+      
+      return false;
+    } catch (e) {
+      debugPrint('CheckoutScreen: Error in _isDateBooked: $e');
+      // If there's an error, allow the date to be selected (fail-safe)
+      return false;
+    }
+  }
+
 
   Future<void> _handleCheckout() async {
     if (!_formKey.currentState!.validate()) {
@@ -331,9 +678,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // Log booking data before navigation
       debugPrint('CheckoutScreen: Booking created successfully');
       debugPrint('CheckoutScreen: Booking data keys: ${bookingData.keys.toList()}');
-      debugPrint('CheckoutScreen: Booking ID: ${bookingData['id'] ?? bookingData['bookingId']}');
+      debugPrint('CheckoutScreen: Full booking data: $bookingData');
+      
+      final bookingId = bookingData['id']?.toString() ?? 
+                       bookingData['bookingId']?.toString();
+      debugPrint('CheckoutScreen: Booking ID: $bookingId');
       debugPrint('CheckoutScreen: Payment ID: ${bookingData['paymentId']}');
       debugPrint('CheckoutScreen: Payment URL: ${bookingData['paymentUrl']}');
+      
+      // Check booking status
+      final status = bookingData['status']?.toString() ?? '';
+      final statusText = bookingData['statusText']?.toString() ?? '';
+      debugPrint('CheckoutScreen: Booking status: $status');
+      debugPrint('CheckoutScreen: Booking statusText: $statusText');
 
       // Extract contractId from booking data
       String? contractId;
@@ -341,25 +698,45 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // Try to get contractId from various possible locations
       if (bookingData.containsKey('contractId')) {
         contractId = bookingData['contractId']?.toString();
+        debugPrint('CheckoutScreen: Found contractId in bookingData: $contractId');
       } else if (bookingData.containsKey('contract')) {
         final contract = bookingData['contract'];
         if (contract is Map<String, dynamic>) {
           contractId = contract['id']?.toString();
+          debugPrint('CheckoutScreen: Found contractId in contract object: $contractId');
         }
       } else if (bookingData.containsKey('contracts')) {
         final contracts = bookingData['contracts'];
-        if (contracts is List && contracts.isNotEmpty) {
-          final firstContract = contracts.first;
-          if (firstContract is Map<String, dynamic>) {
-            contractId = firstContract['id']?.toString();
+        debugPrint('CheckoutScreen: Contracts field type: ${contracts.runtimeType}');
+        if (contracts is List) {
+          debugPrint('CheckoutScreen: Contracts array length: ${contracts.length}');
+          if (contracts.isNotEmpty) {
+            final firstContract = contracts.first;
+            if (firstContract is Map<String, dynamic>) {
+              contractId = firstContract['id']?.toString();
+              debugPrint('CheckoutScreen: Found contractId in contracts array: $contractId');
+            }
+          } else {
+            debugPrint('CheckoutScreen: Contracts array is empty');
           }
         }
       }
       
-      debugPrint('CheckoutScreen: Contract ID: $contractId');
+      debugPrint('CheckoutScreen: Final contractId: $contractId');
 
-      // Điều hướng đến màn hình ký hợp đồng nếu có contractId
+      // Điều hướng dựa trên contract và status
+      // Nếu có contractId, đi đến màn hình ký hợp đồng
       if (contractId != null && contractId.isNotEmpty) {
+        debugPrint('CheckoutScreen: Navigating to ContractSigningScreen with contractId: $contractId');
+        
+        // Ensure bookingId is explicitly set in bookingData (not contractId)
+        // This prevents PaymentScreen from accidentally using contractId
+        if (bookingId != null && bookingId.isNotEmpty) {
+          bookingData['id'] = bookingId;
+          bookingData['bookingId'] = bookingId;
+          debugPrint('CheckoutScreen: Set bookingId in bookingData: $bookingId');
+        }
+        
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -372,8 +749,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
         );
       } else {
-        // Nếu không có contractId, đi thẳng đến payment (fallback)
-        debugPrint('CheckoutScreen: No contractId found, going directly to payment');
+        // Nếu không có contractId, đi đến payment
+        // Điều này xảy ra khi booking ở trạng thái "PendingApproval" và cần thanh toán trước
+        debugPrint('CheckoutScreen: No contractId found, navigating to PaymentScreen');
+        debugPrint('CheckoutScreen: Booking status indicates payment is needed first');
+        
+        // Ensure bookingId is in bookingData for PaymentScreen
+        if (bookingId != null && bookingId.isNotEmpty) {
+          bookingData['id'] = bookingId;
+          bookingData['bookingId'] = bookingId;
+        }
+        
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -410,19 +796,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  // Validate booking dates against existing bookings
-  // Logic:
-  // 1. Return date của booking trước + 2 ngày delay = earliest pickup date của booking mới
-  // 2. Pickup date của booking mới + rental period + 2 ngày delay <= pickup date của booking sau (nếu có)
-  // 3. Khoảng cách tối thiểu giữa 2 booking là 7 ngày
+  // Validate booking dates against existing bookings using loaded bookings data
   Future<_ValidationResult> _validateBookingDates({
     required DateTime pickupDate,
     required DateTime returnDate,
     required List<BookingCartItem> cartItems,
   }) async {
-    const int delayDays = 2; // Delay để nhận máy sau khi trả
-    const int minGapDays = 7; // Khoảng cách tối thiểu giữa 2 booking
-
     // Normalize dates to start of day for comparison
     final normalizedPickup = DateTime(pickupDate.year, pickupDate.month, pickupDate.day);
     final normalizedReturn = DateTime(returnDate.year, returnDate.month, returnDate.day);
@@ -432,136 +811,27 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final itemId = cartItem.cameraId;
       if (itemId.isEmpty) continue;
 
-      try {
-        // Get all existing bookings for this item
-        final existingBookings = await ApiService.getItemBookings(itemId);
+      // Get booked date ranges for this item
+      final ranges = _bookedDateRanges[itemId] ?? [];
 
-        for (final booking in existingBookings) {
-          final existingPickupStr = booking['pickupAt']?.toString();
-          final existingReturnStr = booking['returnAt']?.toString();
+      for (final range in ranges) {
+        final bookedPickup = range['pickupAt']!;
+        final bookedReturn = range['returnAt']!;
 
-          if (existingPickupStr == null || existingReturnStr == null) continue;
-
-          DateTime? existingPickup;
-          DateTime? existingReturn;
-
-          try {
-            existingPickup = DateTime.parse(existingPickupStr);
-            existingReturn = DateTime.parse(existingReturnStr);
-          } catch (e) {
-            debugPrint('CheckoutScreen: Error parsing booking dates: $e');
-            continue;
-          }
-
-          // Normalize existing dates
-          final normalizedExistingPickup = DateTime(
-            existingPickup.year,
-            existingPickup.month,
-            existingPickup.day,
+        // Check if new booking overlaps with existing booking
+        // Overlap occurs if:
+        // - new pickup is before or equal to booked return AND
+        // - new return is after or equal to booked pickup
+        if (normalizedPickup.isBefore(bookedReturn.add(const Duration(days: 1))) &&
+            normalizedReturn.isAfter(bookedPickup.subtract(const Duration(days: 1)))) {
+          return _ValidationResult(
+            hasConflict: true,
+            message: '${cartItem.cameraName} đã được đặt từ ${_formatDate(bookedPickup)} đến ${_formatDate(bookedReturn)}. Vui lòng chọn ngày khác.',
+            cameraName: cartItem.cameraName,
+            existingPickupDate: bookedPickup,
+            existingReturnDate: bookedReturn,
           );
-          final normalizedExistingReturn = DateTime(
-            existingReturn.year,
-            existingReturn.month,
-            existingReturn.day,
-          );
-
-          // Check if new booking overlaps with existing booking
-          // Direct overlap check
-          if (normalizedPickup.isBefore(normalizedExistingReturn.add(Duration(days: delayDays))) &&
-              normalizedReturn.isAfter(normalizedExistingPickup.subtract(Duration(days: delayDays)))) {
-            // Calculate recommended dates
-            final rentalDays = normalizedReturn.difference(normalizedPickup).inDays;
-            DateTime? recommendedPickup;
-            DateTime? recommendedReturn;
-            
-            // If new booking is before existing, recommend dates before existing
-            if (normalizedReturn.isBefore(normalizedExistingPickup)) {
-              recommendedReturn = normalizedExistingPickup.subtract(Duration(days: minGapDays));
-              recommendedPickup = recommendedReturn.subtract(Duration(days: rentalDays));
-            } else {
-              // If new booking is after existing, recommend dates after existing
-              recommendedPickup = normalizedExistingReturn.add(Duration(days: minGapDays));
-              recommendedReturn = recommendedPickup.add(Duration(days: rentalDays));
-            }
-            
-            return _ValidationResult(
-              hasConflict: true,
-              message: '${cartItem.cameraName} đã được đặt từ ${_formatDate(existingPickup)} đến ${_formatDate(existingReturn)}.',
-              cameraName: cartItem.cameraName,
-              existingPickupDate: existingPickup,
-              existingReturnDate: existingReturn,
-              recommendedPickupDate: recommendedPickup,
-              recommendedReturnDate: recommendedReturn,
-            );
-          }
-
-          // Check minimum gap requirement (7 days)
-          // Gap = days between existing return and new pickup
-          final gapAfterExisting = normalizedPickup.difference(normalizedExistingReturn).inDays;
-          // Gap = days between new return and existing pickup
-          final gapBeforeExisting = normalizedExistingPickup.difference(normalizedReturn).inDays;
-
-          // If new booking is after existing booking
-          if (normalizedPickup.isAfter(normalizedExistingReturn)) {
-            // Need at least delayDays to receive the item + minGapDays gap = minGapDays total
-            if (gapAfterExisting < minGapDays) {
-              final earliestAvailable = normalizedExistingReturn.add(Duration(days: minGapDays));
-              final rentalDays = normalizedReturn.difference(normalizedPickup).inDays;
-              final recommendedReturn = earliestAvailable.add(Duration(days: rentalDays));
-              return _ValidationResult(
-                hasConflict: true,
-                message: '${cartItem.cameraName} cần khoảng cách tối thiểu ${minGapDays} ngày sau khi trả (${_formatDate(existingReturn)}). '
-                    'Ngày bắt đầu sớm nhất có thể: ${_formatDate(earliestAvailable)}.',
-                cameraName: cartItem.cameraName,
-                existingPickupDate: existingPickup,
-                existingReturnDate: existingReturn,
-                recommendedPickupDate: earliestAvailable,
-                recommendedReturnDate: recommendedReturn,
-              );
-            }
-          }
-          // If new booking is before existing booking
-          else if (normalizedReturn.isBefore(normalizedExistingPickup)) {
-            // Need at least delayDays after new return + minGapDays gap = minGapDays total
-            if (gapBeforeExisting < minGapDays) {
-              final latestAvailable = normalizedExistingPickup.subtract(Duration(days: minGapDays));
-              final rentalDays = normalizedReturn.difference(normalizedPickup).inDays;
-              final recommendedPickup = latestAvailable.subtract(Duration(days: rentalDays));
-              return _ValidationResult(
-                hasConflict: true,
-                message: '${cartItem.cameraName} cần khoảng cách tối thiểu ${minGapDays} ngày trước khi bắt đầu đặt tiếp (${_formatDate(existingPickup)}). '
-                    'Ngày kết thúc muộn nhất có thể: ${_formatDate(latestAvailable)}.',
-                cameraName: cartItem.cameraName,
-                existingPickupDate: existingPickup,
-                existingReturnDate: existingReturn,
-                recommendedPickupDate: recommendedPickup,
-                recommendedReturnDate: latestAvailable,
-              );
-            }
-          }
-
-          // Check if new booking return + delay would conflict with next booking
-          final newReturnWithDelay = normalizedReturn.add(Duration(days: delayDays));
-          if (newReturnWithDelay.isAfter(normalizedExistingPickup) &&
-              normalizedPickup.isBefore(normalizedExistingPickup)) {
-            final rentalDays = normalizedReturn.difference(normalizedPickup).inDays;
-            final recommendedPickup = normalizedExistingReturn.add(Duration(days: minGapDays));
-            final recommendedReturn = recommendedPickup.add(Duration(days: rentalDays));
-            return _ValidationResult(
-              hasConflict: true,
-              message: '${cartItem.cameraName} không thể cho thuê từ ${_formatDate(pickupDate)} đến ${_formatDate(returnDate)} '
-                  'vì sau khi trả (${_formatDate(returnDate.add(Duration(days: delayDays)))}) sẽ trùng với booking tiếp theo (${_formatDate(existingPickup)}).',
-              cameraName: cartItem.cameraName,
-              existingPickupDate: existingPickup,
-              existingReturnDate: existingReturn,
-              recommendedPickupDate: recommendedPickup,
-              recommendedReturnDate: recommendedReturn,
-            );
-          }
         }
-      } catch (e) {
-        debugPrint('CheckoutScreen: Error checking availability for ${cartItem.cameraName}: $e');
-        // Continue checking other items
       }
     }
 
@@ -695,30 +965,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final conflictPickup = existingPickup ?? unavailableStart;
       final conflictReturn = existingReturn ?? unavailableEnd;
 
-      // Calculate recommended dates
-      const int minGapDays = 7;
-      final rentalDays = _returnDate != null && _pickupDate != null
-          ? _returnDate!.difference(_pickupDate!).inDays
-          : 1;
-      
-      DateTime? recommendedPickup;
-      DateTime? recommendedReturn;
-      
-      // Recommend dates after the conflict
-      recommendedPickup = conflictReturn.add(Duration(days: minGapDays));
-      recommendedReturn = recommendedPickup.add(Duration(days: rentalDays));
-
       // Show popup
       final conflictResult = _ValidationResult(
         hasConflict: true,
-        message: '$cameraName đã được đặt từ ${_formatDate(conflictPickup)} đến ${_formatDate(conflictReturn)}.',
+        message: '$cameraName đã được đặt từ ${_formatDate(conflictPickup)} đến ${_formatDate(conflictReturn)}. Vui lòng chọn ngày khác.',
         cameraName: cameraName,
         existingPickupDate: conflictPickup,
         existingReturnDate: conflictReturn,
-        recommendedPickupDate: recommendedPickup,
-        recommendedReturnDate: recommendedReturn,
       );
       
+      if (!mounted) return;
       _showConflictDialog(conflictResult);
     } catch (e) {
       debugPrint('CheckoutScreen: Error handling backend conflict: $e');
@@ -808,81 +1064,55 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
                 const SizedBox(height: 16),
               ],
-              if (conflictResult.recommendedPickupDate != null &&
-                  conflictResult.recommendedReturnDate != null) ...[
-                const Text(
-                  'Khuyến nghị chọn ngày:',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+              Text(
+                conflictResult.message,
+                style: const TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.blue.withOpacity(0.3),
+                    width: 1,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.green.withOpacity(0.3),
-                      width: 1,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 20,
+                      color: Colors.blue[700],
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.check_circle_outline,
-                        size: 20,
-                        color: Colors.green[700],
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Từ ${_formatDate(conflictResult.recommendedPickupDate)} đến ${_formatDate(conflictResult.recommendedReturnDate)}',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.green[900],
-                            fontWeight: FontWeight.w600,
-                          ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Vui lòng chọn ngày khác để tiếp tục đặt lịch.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ] else ...[
-                Text(
-                  conflictResult.message,
-                  style: const TextStyle(fontSize: 14),
-                ),
-              ],
+              ),
             ],
           ),
         ),
         actions: [
-          TextButton(
+          ElevatedButton(
             onPressed: () {
               Navigator.of(context).pop();
             },
-            child: const Text('Đóng'),
-          ),
-          if (conflictResult.recommendedPickupDate != null &&
-              conflictResult.recommendedReturnDate != null)
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.of(context).pop();
-                setState(() {
-                  _pickupDate = conflictResult.recommendedPickupDate;
-                  _returnDate = conflictResult.recommendedReturnDate;
-                  _dateConflictMessage = null;
-                });
-              },
-              icon: const Icon(Icons.check, size: 18),
-              label: const Text('Chọn ngày này'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-              ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Colors.white,
             ),
+            child: const Text('Đã hiểu'),
+          ),
         ],
       ),
     );
@@ -1079,7 +1309,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               child: _buildDateCard(
                                 label: 'Ngày bắt đầu',
                                 date: _pickupDate,
-                                onTap: () => _selectDate(isPickup: true),
+                                onTap: () {
+                                  debugPrint('CheckoutScreen: Pickup date card tapped');
+                                  _selectDate(isPickup: true);
+                                },
                                 icon: Icons.calendar_today,
                               ),
                             ),
@@ -1088,7 +1321,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               child: _buildDateCard(
                                 label: 'Ngày kết thúc',
                                 date: _returnDate,
-                                onTap: () => _selectDate(isPickup: false),
+                                onTap: () {
+                                  debugPrint('CheckoutScreen: Return date card tapped');
+                                  _selectDate(isPickup: false);
+                                },
                                 icon: Icons.event,
                               ),
                             ),
@@ -1268,52 +1504,140 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   )),
                               const Divider(),
                               const SizedBox(height: 8),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text(
-                                    'Tổng cộng',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Text(
-                                    _formatCurrency(widget.totalAmount),
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .primary,
-                                    ),
-                                  ),
-                                ],
+                              // Hiển thị chi tiết số tiền thanh toán
+                              Builder(
+                                builder: (context) {
+                                  final details = _getCalculationDetails();
+                                  final baseTotal = details['baseTotal'] ?? 0.0;
+                                  final platformFeePercent = details['platformFeePercent'] ?? 0.0;
+                                  final paymentAmount = details['paymentAmount'] ?? 0.0;
+                                  final remainingAmount = details['remainingAmount'] ?? 0.0;
+
+                                  // Nếu có đủ thông tin (có dates), hiển thị chi tiết
+                                  if (_pickupDate != null && _returnDate != null && baseTotal > 0) {
+                                    return Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        // Tổng giá thuê
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              'Tổng giá thuê',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: Colors.grey[700],
+                                              ),
+                                            ),
+                                            Text(
+                                              _formatCurrency(baseTotal),
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        // Phí nền tảng (số tiền thanh toán)
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              platformFeePercent > 0
+                                                  ? 'Phí nền tảng (${platformFeePercent.toStringAsFixed(0)}%)'
+                                                  : 'Phí nền tảng (số tiền thanh toán)',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: Colors.grey[700],
+                                              ),
+                                            ),
+                                            Text(
+                                              _formatCurrency(paymentAmount),
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: Theme.of(context).colorScheme.primary,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        if (remainingAmount > 0) ...[
+                                          const SizedBox(height: 8),
+                                          // Phần còn lại (
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                'Phần thanh toán còn lại',
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  color: Colors.grey[700],
+                                                ),
+                                              ),
+                                              Text(
+                                                _formatCurrency(remainingAmount),
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ],
+                                    );
+                                  } else {
+                                    // Fallback: hiển thị như cũ nếu chưa có dates
+                                    return Column(
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            const Text(
+                                              'Tổng cộng',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            Text(
+                                              _formatCurrency(widget.totalAmount),
+                                              style: TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.bold,
+                                                color: Theme.of(context).colorScheme.primary,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        if (widget.depositAmount > 0) ...[
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                'Đặt cọc dự kiến',
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  color: Colors.grey[700],
+                                                ),
+                                              ),
+                                              Text(
+                                                _formatCurrency(widget.depositAmount),
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ],
+                                    );
+                                  }
+                                },
                               ),
-                              if (widget.depositAmount > 0) ...[
-                                const SizedBox(height: 8),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Đặt cọc dự kiến',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.grey[700],
-                                      ),
-                                    ),
-                                    Text(
-                                      _formatCurrency(widget.depositAmount),
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
                             ],
                           ),
                         ),
@@ -1373,4 +1697,5 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 }
+
 

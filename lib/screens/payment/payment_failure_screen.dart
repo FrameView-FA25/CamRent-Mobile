@@ -1,90 +1,20 @@
 import 'package:flutter/material.dart';
 import '../booking/booking_list_screen.dart';
-import '../../services/api_service.dart';
 
-class PaymentSuccessScreen extends StatefulWidget {
+class PaymentFailureScreen extends StatelessWidget {
   final String? bookingId;
   final String? paymentId;
-  final double? totalAmount;
-  final double? depositAmount;
+  final String? errorMessage;
 
-  const PaymentSuccessScreen({
+  const PaymentFailureScreen({
     super.key,
     this.bookingId,
     this.paymentId,
-    this.totalAmount,
-    this.depositAmount,
+    this.errorMessage,
   });
 
   @override
-  State<PaymentSuccessScreen> createState() => _PaymentSuccessScreenState();
-}
-
-class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
-  double? _baseTotal;
-  double _platformFeePercent = 10.0; // default
-  bool _loading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _initBookingTotals();
-  }
-
-  Future<void> _initBookingTotals() async {
-    if (widget.bookingId == null || widget.bookingId!.isEmpty) {
-      setState(() {
-        _baseTotal = widget.totalAmount;
-      });
-      return;
-    }
-    setState(() {
-      _loading = true;
-    });
-    try {
-      final booking = await ApiService.getBookingById(widget.bookingId!);
-      final snapshotRentalTotalRaw = booking['snapshotRentalTotal'];
-      final snapshotPlatformFeePercentRaw = booking['snapshotPlatformFeePercent'];
-      final rentalTotal = snapshotRentalTotalRaw is num
-          ? snapshotRentalTotalRaw.toDouble()
-          : (double.tryParse(snapshotRentalTotalRaw?.toString() ?? '') ?? 0.0);
-      final feePercent = snapshotPlatformFeePercentRaw is num
-          ? snapshotPlatformFeePercentRaw.toDouble()
-          : (double.tryParse(snapshotPlatformFeePercentRaw?.toString() ?? '') ?? _platformFeePercent);
-
-      setState(() {
-        _baseTotal = rentalTotal > 0 ? rentalTotal : (widget.totalAmount ?? 0.0);
-        _platformFeePercent = feePercent > 0 ? feePercent : 10.0;
-        _loading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _baseTotal = widget.totalAmount;
-        _loading = false;
-      });
-    }
-  }
-
-  String _formatCurrency(double? value) {
-    if (value == null || value <= 0) return '0 VNĐ';
-    final raw = value.toStringAsFixed(0);
-    final buffer = StringBuffer();
-    for (int i = 0; i < raw.length; i++) {
-      buffer.write(raw[i]);
-      final position = raw.length - i - 1;
-      if (position % 3 == 0 && position != 0) {
-        buffer.write(',');
-      }
-    }
-    return '${buffer.toString()} VNĐ';
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final baseTotal = _baseTotal ?? widget.totalAmount ?? 0.0;
-    final platformFee = baseTotal * (_platformFeePercent / 100);
-    final remainingAmount = baseTotal - platformFee;
-
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
@@ -120,7 +50,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Thanh toán thành công',
+                            'Thanh toán thất bại',
                             style: TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
@@ -128,7 +58,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
                           ),
                           SizedBox(height: 4),
                           Text(
-                            'Cảm ơn bạn đã sử dụng dịch vụ',
+                            'Vui lòng thử lại',
                             style: TextStyle(fontSize: 14, color: Colors.grey),
                           ),
                         ],
@@ -143,23 +73,23 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     children: [
-                      // Success Icon
+                      // Failure Icon
                       Container(
                         width: 120,
                         height: 120,
                         decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.1),
+                          color: Colors.red.withOpacity(0.1),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(
-                          Icons.check_circle,
+                          Icons.error_outline,
                           size: 80,
-                          color: Colors.green,
+                          color: Colors.red,
                         ),
                       ),
                       const SizedBox(height: 24),
                       const Text(
-                        'Thanh toán thành công!',
+                        'Thanh toán thất bại!',
                         style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
@@ -167,7 +97,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Đơn hàng của bạn đã được xác nhận và đang được xử lý',
+                        errorMessage ?? 'Đã xảy ra lỗi trong quá trình thanh toán. Vui lòng thử lại sau.',
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey[600],
@@ -195,12 +125,12 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
                             Row(
                               children: [
                                 Icon(
-                                  Icons.receipt_long,
-                                  color: Theme.of(context).colorScheme.primary,
+                                  Icons.info_outline,
+                                  color: Colors.red[700],
                                 ),
                                 const SizedBox(width: 8),
                                 const Text(
-                                  'Thông tin thanh toán',
+                                  'Thông tin',
                                   style: TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
@@ -209,117 +139,21 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
                               ],
                             ),
                             const SizedBox(height: 20),
-                            if (widget.bookingId != null) ...[
+                            if (bookingId != null) ...[
                               _buildInfoRow(
                                 'Mã đơn hàng',
-                                widget.bookingId!,
+                                bookingId!,
                                 Icons.tag,
                               ),
                               const Divider(),
                             ],
-                            if (widget.paymentId != null) ...[
+                            if (paymentId != null) ...[
                               _buildInfoRow(
                                 'Mã thanh toán',
-                                widget.paymentId!,
+                                paymentId!,
                                 Icons.payment,
                               ),
                               const Divider(),
-                            ],
-                            if (_loading)
-                              const Center(
-                                child: Padding(
-                                  padding: EdgeInsets.all(12),
-                                  child: CircularProgressIndicator(),
-                                ),
-                              )
-                            else
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Tổng giá thuê',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey[700],
-                                        ),
-                                      ),
-                                      Text(
-                                        _formatCurrency(baseTotal),
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Phí nền tảng (${_platformFeePercent.toStringAsFixed(0)}%)',
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      Text(
-                                        _formatCurrency(platformFee),
-                                        style: TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                          color: Theme.of(context).colorScheme.primary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Phần thanh toán nhận thiết bị',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey[700],
-                                        ),
-                                      ),
-                                      Text(
-                                        _formatCurrency(remainingAmount),
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            if (widget.depositAmount != null && widget.depositAmount! > 0) ...[
-                              const SizedBox(height: 8),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Đặt cọc',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey[700],
-                                    ),
-                                  ),
-                                  Text(
-                                    _formatCurrency(widget.depositAmount),
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
                             ],
                           ],
                         ),
@@ -329,18 +163,18 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
+                          color: Colors.orange.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: Colors.blue.withOpacity(0.3),
+                            color: Colors.orange.withOpacity(0.3),
                           ),
                         ),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Icon(
-                              Icons.info_outline,
-                              color: Colors.blue[700],
+                              Icons.warning_amber_rounded,
+                              color: Colors.orange[700],
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -352,15 +186,15 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
                                     style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.blue[900],
+                                      color: Colors.orange[900],
                                     ),
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    'Đơn hàng của bạn đang được xử lý. Chúng tôi sẽ liên hệ với bạn trong thời gian sớm nhất để xác nhận đơn hàng.',
+                                    'Đơn hàng của bạn vẫn được giữ lại. Bạn có thể thử thanh toán lại sau.',
                                     style: TextStyle(
                                       fontSize: 12,
-                                      color: Colors.blue[800],
+                                      color: Colors.orange[800],
                                     ),
                                   ),
                                 ],
@@ -419,8 +253,8 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
                               ),
                             );
                           },
-                          icon: const Icon(Icons.history),
-                          label: const Text('Xem đơn hàng'),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Thử lại'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Theme.of(context).colorScheme.primary,
                             foregroundColor: Colors.white,

@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/api_service.dart';
 import '../booking/booking_list_screen.dart';
+import 'payment_confirmation_screen.dart';
 
 class PaymentScreen extends StatefulWidget {
   final Map<String, dynamic> bookingData;
@@ -24,7 +25,75 @@ class PaymentScreen extends StatefulWidget {
 class _PaymentScreenState extends State<PaymentScreen> {
   // Deep link handling is done globally in main.dart using app_links
 
-  void _showPaymentSuccessDialog() {
+  Future<void> _processWalletPayment() async {
+    final bookingId = _getBookingId();
+    if (bookingId == null || bookingId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không tìm thấy mã đặt lịch. Vui lòng thử lại.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isProcessing = true;
+      _statusMessage = 'Đang xử lý thanh toán bằng ví...';
+    });
+
+    try {
+      final calculatedTotal = _calculatePaymentAmount();
+      final amount = widget.depositAmount > 0 ? widget.depositAmount : calculatedTotal;
+      
+      // Create payment authorization with Wallet method (2)
+      final paymentId = await ApiService.createPaymentAuthorization(
+        bookingId: bookingId,
+        mode: 1, // Deposit
+        method: 2, // Wallet
+      );
+
+      debugPrint('PaymentScreen: Wallet payment authorized, paymentId: $paymentId');
+
+      // Show success dialog with amount
+      if (mounted) {
+        _showWalletPaymentSuccessDialog(amount);
+      }
+    } catch (e) {
+      debugPrint('PaymentScreen: Wallet payment error: $e');
+      if (mounted) {
+        final errorMsg = e.toString().toLowerCase();
+        // Check if it's an insufficient balance error
+        if (errorMsg.contains('không đủ') || 
+            errorMsg.contains('insufficient') || 
+            errorMsg.contains('balance') ||
+            errorMsg.contains('thiếu') ||
+            errorMsg.contains('số dư')) {
+          // Show insufficient balance dialog
+          _showInsufficientBalanceDialog();
+        } else {
+          // Show generic error
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Thanh toán bằng ví thất bại: ${e.toString().replaceFirst('Exception: ', '')}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          setState(() {
+            _statusMessage = 'Thanh toán bằng ví thất bại';
+          });
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+      }
+    }
+  }
+
+  void _showWalletPaymentSuccessDialog(double amount) {
     if (!mounted) return;
     
     showDialog(
@@ -41,8 +110,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
             Text('Thanh toán thành công'),
           ],
         ),
-        content: const Text(
-          'Bạn đã thanh toán thành công. Đơn hàng của bạn đang được xử lý.',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Đã trừ ví thành công!'),
+            const SizedBox(height: 8),
+            Text(
+              'Số tiền: ${_formatCurrency(amount)}',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.green,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Đơn hàng của bạn đang được xử lý.',
+              style: TextStyle(fontSize: 14),
+            ),
+          ],
         ),
         actions: [
           ElevatedButton.icon(
@@ -65,24 +152,58 @@ class _PaymentScreenState extends State<PaymentScreen> {
     );
   }
 
-  void _showPaymentCancelDialog() {
+  void _showInsufficientBalanceDialog() {
     if (!mounted) return;
+    
+    final calculatedTotal = _calculatePaymentAmount();
+    final amount = widget.depositAmount > 0 ? widget.depositAmount : calculatedTotal;
     
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
         title: const Row(
           children: [
-            Icon(Icons.cancel, color: Colors.orange, size: 28),
+            Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
             SizedBox(width: 8),
-            Text('Thanh toán đã hủy'),
+            Text('Ví không đủ tiền'),
           ],
         ),
-        content: const Text(
-          'Bạn đã hủy thanh toán. Bạn có thể thử lại sau.',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Số dư trong ví của bạn không đủ để thanh toán.',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Số tiền cần thanh toán:',
+                  style: TextStyle(fontSize: 14),
+                ),
+                Text(
+                  _formatCurrency(amount),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Vui lòng nạp thêm tiền vào ví hoặc chọn phương thức thanh toán khác.',
+              style: TextStyle(fontSize: 14),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -110,19 +231,227 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return '${buffer.toString()} VNĐ';
   }
 
-  String _formatDate(DateTime? date) {
-    if (date == null) return 'Chưa có';
-    return '${date.day.toString().padLeft(2, '0')}/'
-        '${date.month.toString().padLeft(2, '0')}/'
-        '${date.year}';
+  // Tính số tiền thanh toán: số ngày thuê * giá thuê theo ngày * (1 + phí nền tảng %)
+  // Helper method để lấy thông tin tính toán
+  Map<String, double> _getCalculationDetails() {
+    try {
+      final pickupAtStr = widget.bookingData['pickupAt']?.toString();
+      final returnAtStr = widget.bookingData['returnAt']?.toString();
+      var baseDailyRateRaw = widget.bookingData['snapshotBaseDailyRate'];
+      var platformFeePercentRaw = widget.bookingData['snapshotPlatformFeePercent'];
+      
+      // Ưu tiên lấy tổng giá thuê từ booking data
+      var snapshotRentalTotalRaw = widget.bookingData['snapshotRentalTotal'];
+      final snapshotRentalTotal = (snapshotRentalTotalRaw is num ? snapshotRentalTotalRaw.toDouble() : (snapshotRentalTotalRaw?.toDouble() ?? 0.0));
+      
+      // Fallback: Thử lấy từ items nếu không có trong snapshot
+      if (baseDailyRateRaw == null || (baseDailyRateRaw is num && baseDailyRateRaw <= 0)) {
+        final items = widget.bookingData['items'];
+        if (items is List && items.isNotEmpty) {
+          final firstItem = items[0];
+          if (firstItem is Map<String, dynamic>) {
+            final camera = firstItem['camera'];
+            if (camera is Map<String, dynamic>) {
+              baseDailyRateRaw ??= camera['pricePerDay'] ?? camera['price_per_day'] ?? camera['dailyRate'] ?? camera['daily_rate'];
+            }
+            // Thử lấy từ item trực tiếp
+            baseDailyRateRaw ??= firstItem['pricePerDay'] ?? firstItem['price_per_day'] ?? firstItem['dailyRate'] ?? firstItem['daily_rate'];
+          }
+        }
+      }
+      
+      if (platformFeePercentRaw == null || (platformFeePercentRaw is num && platformFeePercentRaw <= 0)) {
+        final items = widget.bookingData['items'];
+        if (items is List && items.isNotEmpty) {
+          final firstItem = items[0];
+          if (firstItem is Map<String, dynamic>) {
+            final camera = firstItem['camera'];
+            if (camera is Map<String, dynamic>) {
+              platformFeePercentRaw ??= camera['platformFeePercent'] ?? camera['platform_fee_percent'] ?? camera['feePercent'] ?? camera['fee_percent'];
+            }
+            // Thử lấy từ item trực tiếp
+            platformFeePercentRaw ??= firstItem['platformFeePercent'] ?? firstItem['platform_fee_percent'] ?? firstItem['feePercent'] ?? firstItem['fee_percent'];
+          }
+        }
+        // Mặc định 10% nếu vẫn không có
+        if (platformFeePercentRaw == null || (platformFeePercentRaw is num && platformFeePercentRaw <= 0)) {
+          platformFeePercentRaw = 10.0;
+        }
+      }
+      
+      final baseDailyRate = (baseDailyRateRaw is num ? baseDailyRateRaw.toDouble() : (baseDailyRateRaw?.toDouble() ?? 0.0));
+      var platformFeePercent = (platformFeePercentRaw is num ? platformFeePercentRaw.toDouble() : (platformFeePercentRaw?.toDouble() ?? 10.0));
+
+      // ƯU TIÊN: Nếu có snapshotRentalTotal từ booking, sử dụng nó làm baseTotal
+      // Đây là nguồn dữ liệu chính xác nhất từ backend
+      if (snapshotRentalTotal > 0) {
+        final baseTotal = snapshotRentalTotal;
+        final platformFee = baseTotal * (platformFeePercent / 100);
+        final remainingAmount = baseTotal - platformFee;
+        debugPrint('PaymentScreen: Using snapshotRentalTotal from booking: $baseTotal');
+        return {
+          'baseTotal': baseTotal,
+          'platformFee': platformFee,
+          'platformFeePercent': platformFeePercent,
+          'paymentAmount': platformFee,
+          'remainingAmount': remainingAmount,
+        };
+      }
+      
+      debugPrint('PaymentScreen: snapshotRentalTotal not available, calculating from dates and rates');
+
+      if (pickupAtStr == null || returnAtStr == null) {
+        // Nếu không có dates, giả sử totalAmount là baseTotal (tổng giá thuê)
+        // Đồng bộ với contract_signing_screen
+        if (widget.totalAmount > 0 && platformFeePercent > 0) {
+          final estimatedBaseTotal = widget.totalAmount;
+          final platformFee = estimatedBaseTotal * (platformFeePercent / 100);
+          return {
+            'baseTotal': estimatedBaseTotal,
+            'platformFee': platformFee,
+            'platformFeePercent': platformFeePercent,
+            'paymentAmount': platformFee,
+            'remainingAmount': estimatedBaseTotal - platformFee,
+          };
+        }
+        return {
+          'baseTotal': widget.totalAmount,
+          'platformFee': 0.0,
+          'platformFeePercent': platformFeePercent,
+          'paymentAmount': widget.totalAmount,
+          'remainingAmount': 0.0,
+        };
+      }
+
+      final pickupAt = DateTime.parse(pickupAtStr);
+      final returnAt = DateTime.parse(returnAtStr);
+      final rentalDays = returnAt.difference(pickupAt).inDays;
+      
+      if (rentalDays <= 0) {
+        // Nếu rentalDays <= 0, giả sử totalAmount là baseTotal (tổng giá thuê)
+        // Đồng bộ với contract_signing_screen
+        if (widget.totalAmount > 0 && platformFeePercent > 0) {
+          final estimatedBaseTotal = widget.totalAmount;
+          final platformFee = estimatedBaseTotal * (platformFeePercent / 100);
+          return {
+            'baseTotal': estimatedBaseTotal,
+            'platformFee': platformFee,
+            'platformFeePercent': platformFeePercent,
+            'paymentAmount': platformFee,
+            'remainingAmount': estimatedBaseTotal - platformFee,
+          };
+        }
+        return {
+          'baseTotal': widget.totalAmount,
+          'platformFee': 0.0,
+          'platformFeePercent': platformFeePercent,
+          'paymentAmount': widget.totalAmount,
+          'remainingAmount': 0.0,
+        };
+      }
+
+      // Nếu baseDailyRate vẫn là 0, tính từ totalAmount và rentalDays
+      double finalBaseDailyRate = baseDailyRate;
+      if (finalBaseDailyRate <= 0 && widget.totalAmount > 0 && rentalDays > 0) {
+        finalBaseDailyRate = widget.totalAmount / rentalDays;
+      }
+
+      if (finalBaseDailyRate <= 0) {
+        // Fallback cuối cùng: giả sử totalAmount là baseTotal (tổng giá thuê)
+        // Đồng bộ với contract_signing_screen
+        if (widget.totalAmount > 0 && platformFeePercent > 0) {
+          final estimatedBaseTotal = widget.totalAmount;
+          final platformFee = estimatedBaseTotal * (platformFeePercent / 100);
+          return {
+            'baseTotal': estimatedBaseTotal,
+            'platformFee': platformFee,
+            'platformFeePercent': platformFeePercent,
+            'paymentAmount': platformFee,
+            'remainingAmount': estimatedBaseTotal - platformFee,
+          };
+        }
+        return {
+          'baseTotal': widget.totalAmount,
+          'platformFee': 0.0,
+          'platformFeePercent': platformFeePercent,
+          'paymentAmount': widget.totalAmount,
+          'remainingAmount': 0.0,
+        };
+      }
+
+      final baseTotal = rentalDays * finalBaseDailyRate; // Tổng giá thuê cơ bản
+      final platformFee = baseTotal * (platformFeePercent / 100); // Phí nền tảng = % của tổng giá thuê
+      final remainingAmount = baseTotal - platformFee; // Phần còn lại (thanh toán khi nhận thiết bị)
+
+      return {
+        'baseTotal': baseTotal.toDouble(),
+        'platformFee': platformFee.toDouble(),
+        'platformFeePercent': platformFeePercent.toDouble(), // Thêm phần trăm để hiển thị
+        'paymentAmount': platformFee.toDouble(), // Số tiền thanh toán = phí nền tảng
+        'remainingAmount': remainingAmount.toDouble(),
+      };
+    } catch (e) {
+      debugPrint('PaymentScreen: Error calculating: $e');
+      // Fallback: tính từ totalAmount với platformFeePercent mặc định 10%
+      // Giả sử totalAmount là baseTotal (tổng giá thuê) - đồng bộ với contract_signing_screen
+      final platformFeePercent = 10.0;
+      if (widget.totalAmount > 0) {
+        final estimatedBaseTotal = widget.totalAmount;
+        final platformFee = estimatedBaseTotal * (platformFeePercent / 100);
+        return {
+          'baseTotal': estimatedBaseTotal,
+          'platformFee': platformFee,
+          'platformFeePercent': platformFeePercent,
+          'paymentAmount': platformFee,
+          'remainingAmount': estimatedBaseTotal - platformFee,
+        };
+      }
+      return {
+        'baseTotal': 0.0,
+        'platformFee': 0.0,
+        'platformFeePercent': platformFeePercent,
+        'paymentAmount': widget.totalAmount,
+        'remainingAmount': 0.0,
+      };
+    }
   }
 
+  double _calculatePaymentAmount() {
+    final details = _getCalculationDetails();
+    return details['paymentAmount'] ?? widget.totalAmount;
+  }
+
+
   String? _getBookingId() {
-    return _searchForBookingId(widget.bookingData);
+    debugPrint('PaymentScreen: _getBookingId() called');
+    debugPrint('PaymentScreen: bookingData keys: ${widget.bookingData.keys.toList()}');
+    
+    // First, try direct extraction from bookingData
+    final direct = _tryExtractBookingIdFromMap(widget.bookingData);
+    if (direct != null && direct.isNotEmpty) {
+      debugPrint('PaymentScreen: Found bookingId directly: $direct');
+      return direct;
+    }
+    
+    // If not found, search in nested structures
+    debugPrint('PaymentScreen: Not found directly, searching nested structures...');
+    final nested = _searchForBookingId(widget.bookingData);
+    if (nested != null && nested.isNotEmpty) {
+      debugPrint('PaymentScreen: Found bookingId in nested: $nested');
+      return nested;
+    }
+    
+    debugPrint('PaymentScreen: WARNING - No bookingId found anywhere');
+    return null;
   }
 
   String? _searchForBookingId(dynamic source) {
     if (source is Map<String, dynamic>) {
+      // Skip if already checked at root level
+      if (source == widget.bookingData) {
+        return null; // Already checked in _getBookingId
+      }
+      
       final direct = _tryExtractBookingIdFromMap(source);
       if (direct != null && direct.isNotEmpty) {
         return direct;
@@ -147,76 +476,92 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   String? _tryExtractBookingIdFromMap(Map<String, dynamic> map) {
-    const keyVariations = [
-      'bookingId',
-      'id',
-      '_id',
-      'cartId',
-      'bookingCartId',
-      'bookingIdentifier',
-    ];
-    for (final key in keyVariations) {
-      final value = map[key];
-      final asString = value?.toString().trim();
-      if (asString != null && asString.isNotEmpty) {
-        return asString;
+    // Priority order: id (root level) first, then bookingId (but verify not contractId)
+    // Make sure we don't accidentally get contractId
+    
+    debugPrint('PaymentScreen: Extracting bookingId from map');
+    debugPrint('PaymentScreen: Map keys: ${map.keys.toList()}');
+    
+    // Get all contractIds first to exclude them
+    final contractIds = <String>{};
+    
+    // Check contractId field if it exists
+    final contractIdField = map['contractId']?.toString().trim();
+    if (contractIdField != null && contractIdField.isNotEmpty) {
+      contractIds.add(contractIdField);
+      debugPrint('PaymentScreen: Found contractId in contractId field: $contractIdField');
+    }
+    
+    // Get contractIds from contracts array
+    final contracts = map['contracts'];
+    if (contracts is List) {
+      for (final contract in contracts) {
+        if (contract is Map<String, dynamic>) {
+          final contractId = contract['id']?.toString().trim();
+          if (contractId != null && contractId.isNotEmpty) {
+            contractIds.add(contractId);
+            debugPrint('PaymentScreen: Found contractId in contracts array: $contractId');
+          }
+        }
       }
     }
+    
+    debugPrint('PaymentScreen: All contractIds collected: $contractIds');
+    
+    // Priority 1: Try 'id' field first (root level bookingId)
+    // This is the most reliable source for bookingId
+    final id = map['id']?.toString().trim();
+    if (id != null && id.isNotEmpty) {
+      if (contractIds.contains(id)) {
+        debugPrint('PaymentScreen: WARNING - id field contains contractId: $id');
+        debugPrint('PaymentScreen: Skipping id field, it is a contractId');
+      } else {
+        debugPrint('PaymentScreen: ✓ Found bookingId from id key: $id');
+        return id;
+      }
+    } else {
+      debugPrint('PaymentScreen: No id field found in map');
+    }
+    
+    // Priority 2: Try bookingId field, but verify it's not a contractId
+    final bookingIdField = map['bookingId']?.toString().trim();
+    if (bookingIdField != null && bookingIdField.isNotEmpty) {
+      if (contractIds.contains(bookingIdField)) {
+        debugPrint('PaymentScreen: WARNING - bookingId field contains contractId: $bookingIdField');
+        debugPrint('PaymentScreen: Skipping bookingId field, it is a contractId');
+      } else {
+        debugPrint('PaymentScreen: ✓ Found bookingId from bookingId key: $bookingIdField');
+        return bookingIdField;
+      }
+    } else {
+      debugPrint('PaymentScreen: No bookingId field found in map');
+    }
+    
+    // Try other variations
+    const otherKeys = ['_id', 'cartId', 'bookingCartId', 'bookingIdentifier'];
+    for (final key in otherKeys) {
+      final value = map[key]?.toString().trim();
+      if (value != null && value.isNotEmpty && !contractIds.contains(value)) {
+        debugPrint('PaymentScreen: ✓ Found bookingId from $key: $value');
+        return value;
+      }
+    }
+    
+    debugPrint('PaymentScreen: ✗ WARNING - No bookingId found in map');
+    debugPrint('PaymentScreen: Map values: ${map.entries.map((e) => '${e.key}: ${e.value}').join(', ')}');
+    debugPrint('PaymentScreen: Available contractIds: $contractIds');
     return null;
-  }
-
-  String? _getPaymentId() {
-    return widget.bookingData['paymentId']?.toString();
-  }
-
-  String? _getCustomerName() {
-    return widget.bookingData['customerName']?.toString() ??
-        widget.bookingData['customer_name']?.toString();
-  }
-
-  String? _getCustomerPhone() {
-    return widget.bookingData['customerPhone']?.toString() ??
-        widget.bookingData['customer_phone']?.toString();
-  }
-
-  String? _getCustomerEmail() {
-    return widget.bookingData['customerEmail']?.toString() ??
-        widget.bookingData['customer_email']?.toString();
-  }
-
-  DateTime? _getCreatedAt() {
-    final createdAt = widget.bookingData['createdAt'] ??
-        widget.bookingData['created_at'] ??
-        widget.bookingData['createdDate'];
-    if (createdAt == null) return null;
-    if (createdAt is DateTime) return createdAt;
-    return DateTime.tryParse(createdAt.toString());
   }
 
   bool _isProcessing = false;
   String _statusMessage = 'Chưa có giao dịch thanh toán';
+  int _selectedPaymentMethod = 1; // 1 = PayOS, 2 = Wallet
 
   @override
   void initState() {
     super.initState();
-    // Auto-open payment URL if available
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkAndOpenPaymentUrl();
-    });
-  }
-
-  Future<void> _checkAndOpenPaymentUrl() async {
-    final paymentUrl = _getPaymentUrl();
-    debugPrint('PaymentScreen: Checking for payment URL...');
-    debugPrint('PaymentScreen: bookingData keys: ${widget.bookingData.keys.toList()}');
-    debugPrint('PaymentScreen: paymentUrl value: $paymentUrl');
-    
-    if (paymentUrl != null && paymentUrl.isNotEmpty) {
-      debugPrint('PaymentScreen: Found payment URL, opening: $paymentUrl');
-      await _openPaymentUrl(paymentUrl);
-    } else {
-      debugPrint('PaymentScreen: No payment URL found in bookingData');
-    }
+    // Removed auto-open payment URL - user should choose payment method first
+    // Payment URL will be opened only when user selects PayOS and clicks "Thanh toán"
   }
 
   String? _getPaymentUrl() {
@@ -243,12 +588,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
         throw Exception('URL không hợp lệ: $cleanedUrl');
       }
       
-      final bookingId = _getBookingId();
-      final paymentId = widget.bookingData['paymentId']?.toString();
-      
-      if (bookingId == null || bookingId.isEmpty) {
-        throw Exception('Không tìm thấy mã đặt lịch');
+      // Try to get bookingId for logging, but don't fail if not found
+      // (paymentUrl is already available, so bookingId is not critical)
+      String? bookingId;
+      try {
+        bookingId = _getBookingId();
+      } catch (e) {
+        debugPrint('PaymentScreen: Could not get bookingId for logging: $e');
       }
+      
+      final paymentId = widget.bookingData['paymentId']?.toString();
       
       debugPrint('PaymentScreen: Opening external browser with URL: $cleanedUrl');
       debugPrint('PaymentScreen: Booking ID: $bookingId');
@@ -323,8 +672,22 @@ class _PaymentScreenState extends State<PaymentScreen> {
       if (launched) {
         setState(() {
           _isProcessing = false;
-          _statusMessage = 'Đã mở trang thanh toán PayOS. Vui lòng hoàn tất thanh toán trên trình duyệt.';
         });
+        
+        // Navigate to payment confirmation screen
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PaymentConfirmationScreen(
+                bookingId: bookingId,
+                paymentId: paymentId,
+                totalAmount: widget.totalAmount,
+                depositAmount: widget.depositAmount,
+              ),
+            ),
+          );
+        }
       } else {
         // If all methods fail, show URL in a dialog for manual copy
         debugPrint('PaymentScreen: All launch methods failed, showing URL dialog');
@@ -429,17 +792,164 @@ class _PaymentScreenState extends State<PaymentScreen> {
       return;
     }
 
-    // Get booking ID
-    final bookingId = _getBookingId();
+    // CRITICAL: Collect all contractIds first
+    final contractIds = <String>{};
+    
+    // Get contractId from contractId field if exists
+    final contractIdField = widget.bookingData['contractId']?.toString().trim();
+    if (contractIdField != null && contractIdField.isNotEmpty) {
+      contractIds.add(contractIdField);
+      debugPrint('PaymentScreen: Found contractId in contractId field: $contractIdField');
+    }
+    
+    // Get contractIds from contracts array
+    final contracts = widget.bookingData['contracts'];
+    if (contracts is List) {
+      for (final contract in contracts) {
+        if (contract is Map<String, dynamic>) {
+          final contractId = contract['id']?.toString().trim();
+          if (contractId != null && contractId.isNotEmpty) {
+            contractIds.add(contractId);
+            debugPrint('PaymentScreen: Found contractId in contracts array: $contractId');
+          }
+        }
+      }
+    }
+    
+    debugPrint('PaymentScreen: All contractIds found: $contractIds');
+    debugPrint('PaymentScreen: Full bookingData keys: ${widget.bookingData.keys.toList()}');
+    
+    // Get booking ID - prioritize root level 'id' field
+    var bookingId = widget.bookingData['id']?.toString().trim();
+    
+    // Verify root level 'id' is not a contractId
+    if (bookingId != null && bookingId.isNotEmpty) {
+      if (contractIds.contains(bookingId)) {
+        debugPrint('PaymentScreen: WARNING - root id field contains contractId: $bookingId');
+        bookingId = null; // Reset to find real bookingId
+      } else {
+        debugPrint('PaymentScreen: ✓ Found bookingId from root id field: $bookingId');
+      }
+    }
+    
+    // If root level 'id' is not available or is contractId, try other methods
     if (bookingId == null || bookingId.isEmpty) {
+      debugPrint('PaymentScreen: Root id not available, trying _getBookingId()...');
+      bookingId = _getBookingId();
+      
+      if (bookingId != null && bookingId.isNotEmpty) {
+        debugPrint('PaymentScreen: Found bookingId from _getBookingId(): $bookingId');
+        
+        // Verify it's not a contractId
+        if (contractIds.contains(bookingId)) {
+          debugPrint('PaymentScreen: ERROR - bookingId from _getBookingId() is contractId: $bookingId');
+          bookingId = null; // Reset
+        }
+      }
+    }
+    
+    // If still no valid bookingId, call API immediately
+    if (bookingId == null || bookingId.isEmpty || contractIds.contains(bookingId)) {
+      debugPrint('PaymentScreen: No valid bookingId found, calling API immediately...');
+      
+      // If we have a contractId, use it to find booking
+      String? contractIdToSearch;
+      if (contractIds.isNotEmpty) {
+        contractIdToSearch = contractIds.first;
+        debugPrint('PaymentScreen: Using contractId to search: $contractIdToSearch');
+      } else {
+        // If all fields are contractId, use the contractId field
+        contractIdToSearch = contractIdField;
+        debugPrint('PaymentScreen: Using contractId field to search: $contractIdToSearch');
+      }
+      
+      if (contractIdToSearch != null && contractIdToSearch.isNotEmpty) {
+        try {
+          setState(() {
+            _isProcessing = true;
+            _statusMessage = 'Đang tìm mã đặt lịch...';
+          });
+          
+          final bookings = await ApiService.getBookings();
+          debugPrint('PaymentScreen: Retrieved ${bookings.length} bookings from API');
+          
+          // Find booking that contains this contractId
+          bool found = false;
+          for (final booking in bookings) {
+            if (booking is Map<String, dynamic>) {
+              final bookingIdFromApi = booking['id']?.toString().trim();
+              final bookingContracts = booking['contracts'];
+              if (bookingContracts is List) {
+                for (final bc in bookingContracts) {
+                  if (bc is Map<String, dynamic>) {
+                    final bcId = bc['id']?.toString().trim();
+                    if (bcId == contractIdToSearch) {
+                      // Found the booking containing this contract
+                      if (bookingIdFromApi != null && bookingIdFromApi.isNotEmpty && !contractIds.contains(bookingIdFromApi)) {
+                        debugPrint('PaymentScreen: ✓ Found real bookingId from API: $bookingIdFromApi');
+                        bookingId = bookingIdFromApi;
+                        // Update bookingData with correct bookingId
+                        widget.bookingData['id'] = bookingId;
+                        widget.bookingData['bookingId'] = bookingId;
+                        found = true;
+                        break;
+                      }
+                    }
+                  }
+                }
+                if (found) break; // Found, exit outer loop
+              }
+            }
+          }
+          
+          if (!found) {
+            debugPrint('PaymentScreen: ERROR - Cannot find booking containing contractId: $contractIdToSearch');
+            // Try to get the most recent booking as fallback
+            if (bookings.isNotEmpty) {
+              final latestBooking = bookings.first;
+              if (latestBooking is Map<String, dynamic>) {
+                final latestBookingId = latestBooking['id']?.toString().trim();
+                if (latestBookingId != null && latestBookingId.isNotEmpty && !contractIds.contains(latestBookingId)) {
+                  debugPrint('PaymentScreen: Using latest booking as fallback: $latestBookingId');
+                  bookingId = latestBookingId;
+                  widget.bookingData['id'] = bookingId;
+                  widget.bookingData['bookingId'] = bookingId;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('PaymentScreen: Error calling API to find booking: $e');
+          // Don't throw, continue with payment flow if we have paymentUrl
+        }
+      }
+    }
+    
+    // Final check
+    if (bookingId == null || bookingId.isEmpty) {
+      debugPrint('PaymentScreen: ERROR - No bookingId found after all attempts');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Không tìm thấy mã đặt lịch để tạo thanh toán.'),
+          content: Text('Không tìm thấy mã đặt lịch để tạo thanh toán. Vui lòng thử lại.'),
           backgroundColor: Colors.orange,
         ),
       );
       return;
     }
+    
+    // Final verification
+    if (contractIds.contains(bookingId)) {
+      debugPrint('PaymentScreen: ERROR - Final bookingId is still a contractId: $bookingId');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Lỗi: Không tìm thấy mã đặt lịch hợp lệ. Vui lòng thử lại.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    
+    debugPrint('PaymentScreen: Final verified bookingId: $bookingId');
 
     setState(() {
       _isProcessing = true;
@@ -451,15 +961,21 @@ class _PaymentScreenState extends State<PaymentScreen> {
       
       // Note: Delay is now handled inside getPaymentUrlFromBookingId with retry logic
       // Get payment URL directly from booking ID (simplified flow)
-      final amount = widget.depositAmount > 0 ? widget.depositAmount : widget.totalAmount;
-      final paymentUrl = await ApiService.getPaymentUrlFromBookingId(
+      final calculatedTotal = _calculatePaymentAmount();
+      final amount = widget.depositAmount > 0 ? widget.depositAmount : calculatedTotal;
+      final paymentResult = await ApiService.getPaymentUrlFromBookingId(
         bookingId: bookingId,
         mode: 'Deposit',
         amount: amount,
         description: 'Thanh toán đặt cọc cho đơn hàng $bookingId',
       );
 
+      // Extract paymentId and paymentUrl from Map response
+      final paymentId = paymentResult['paymentId']?.toString();
+      final paymentUrl = paymentResult['paymentUrl']?.toString() ?? '';
+
       debugPrint('PaymentScreen: Payment URL received: ${paymentUrl.isNotEmpty ? "yes" : "no"}');
+      debugPrint('PaymentScreen: Payment ID: $paymentId');
       if (paymentUrl.isNotEmpty) {
         debugPrint('PaymentScreen: Payment URL: $paymentUrl');
       } else {
@@ -467,8 +983,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
         throw Exception('Không nhận được URL thanh toán từ server');
       }
 
-      // Save URL to bookingData for future use
+      // Save URL and paymentId to bookingData for future use
       widget.bookingData['paymentUrl'] = paymentUrl;
+      if (paymentId != null && paymentId.isNotEmpty) {
+        widget.bookingData['paymentId'] = paymentId;
+        debugPrint('PaymentScreen: Saved paymentId to bookingData: $paymentId');
+      }
       
       // Open the payment URL
       await _openPaymentUrl(paymentUrl);
@@ -494,171 +1014,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
-  Future<void> _createAndOpenPayOSUrl(String paymentId) async {
-    try {
-      setState(() {
-        _isProcessing = true;
-        _statusMessage = 'Đang tạo liên kết thanh toán PayOS...';
-      });
-
-      final amount =
-          widget.depositAmount > 0 ? widget.depositAmount : widget.totalAmount;
-      
-      debugPrint('PaymentScreen: Initializing PayOS payment with paymentId: $paymentId, amount: $amount');
-      try {
-        final bookingId = _getBookingId() ?? '';
-        final payOsUrl = await ApiService.initializePayOSPayment(
-          paymentId: paymentId,
-          amount: amount,
-          description: 'Thanh toán đặt cọc cho đơn hàng $bookingId',
-          returnUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=success',
-          cancelUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=$bookingId&paymentId=$paymentId&status=cancel',
-        );
-
-        debugPrint('PaymentScreen: PayOS URL received: ${payOsUrl.isNotEmpty ? "yes" : "no"}');
-        if (payOsUrl.isEmpty) {
-          throw Exception('Không nhận được URL PayOS');
-        }
-
-        // Save URL to bookingData for future use
-        widget.bookingData['paymentUrl'] = payOsUrl;
-        
-        // Open the URL
-        await _openPaymentUrl(payOsUrl);
-      } catch (e) {
-        final errorMsg = e.toString();
-        // Check if payment already exists
-        if (errorMsg.contains('Đơn thanh toán đã tồn tại') || 
-            errorMsg.contains('đã tồn tại')) {
-          debugPrint('PaymentScreen: Payment already exists, attempting to get existing URL...');
-          
-          // Try to get existing payment URL from booking info or retry initialize
-          try {
-            final paymentId = _getPaymentId();
-            final bookingId = _getBookingId();
-            
-            if (paymentId != null && paymentId.isNotEmpty) {
-              debugPrint('PaymentScreen: Payment already exists, attempting to retrieve URL...');
-              
-              // Strategy 1: Try to get payment info from booking
-              if (bookingId != null && bookingId.isNotEmpty) {
-                try {
-                  debugPrint('PaymentScreen: Trying to get payment info from booking: $bookingId');
-                  final bookingInfo = await ApiService.getBookingById(bookingId);
-                  
-                  // Check for payment info in booking
-                  final paymentInfo = bookingInfo['payment'] ?? 
-                                    bookingInfo['paymentInfo'] ??
-                                    bookingInfo['payments'];
-                  
-                  if (paymentInfo is Map) {
-                    final existingUrl = paymentInfo['url']?.toString() ?? 
-                                       paymentInfo['paymentUrl']?.toString() ?? 
-                                       paymentInfo['payosUrl']?.toString() ??
-                                       paymentInfo['checkoutUrl']?.toString() ??
-                                       paymentInfo['payosCheckoutUrl']?.toString() ??
-                                       paymentInfo['link']?.toString() ??
-                                       paymentInfo['paymentLink']?.toString();
-                    
-                    if (existingUrl != null && existingUrl.isNotEmpty) {
-                      final cleanedUrl = existingUrl.replaceAll('"', '').replaceAll("'", '').trim();
-                      debugPrint('PaymentScreen: Found payment URL from booking: $cleanedUrl');
-                      widget.bookingData['paymentUrl'] = cleanedUrl;
-                      await _openPaymentUrl(cleanedUrl);
-                      return;
-                    }
-                  }
-                  
-                  // Also check direct fields in booking
-                  final directUrl = bookingInfo['paymentUrl']?.toString() ?? 
-                                   bookingInfo['payosUrl']?.toString() ??
-                                   bookingInfo['checkoutUrl']?.toString();
-                  
-                  if (directUrl != null && directUrl.isNotEmpty) {
-                    final cleanedUrl = directUrl.replaceAll('"', '').replaceAll("'", '').trim();
-                    debugPrint('PaymentScreen: Found payment URL in booking: $cleanedUrl');
-                    widget.bookingData['paymentUrl'] = cleanedUrl;
-                    await _openPaymentUrl(cleanedUrl);
-                    return;
-                  }
-                } catch (bookingError) {
-                  debugPrint('PaymentScreen: Error getting payment from booking: $bookingError');
-                }
-              }
-              
-              // Strategy 2: Retry initialize PayOS with a small delay (backend might return URL if payment exists)
-              debugPrint('PaymentScreen: Retrying PayOS initialization after delay...');
-              await Future.delayed(const Duration(seconds: 1));
-              
-              try {
-                final amount = widget.depositAmount > 0 ? widget.depositAmount : widget.totalAmount;
-                final retryUrl = await ApiService.initializePayOSPayment(
-                  paymentId: paymentId,
-                  amount: amount,
-                  description: 'Thanh toán đặt cọc cho đơn hàng ${bookingId ?? ""}',
-                  returnUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=${bookingId ?? ""}&paymentId=$paymentId&status=success',
-                  cancelUrl: 'https://camrent-backend.up.railway.app/api/Payments/return?bookingId=${bookingId ?? ""}&paymentId=$paymentId&status=cancel',
-                );
-                
-                if (retryUrl.isNotEmpty) {
-                  debugPrint('PaymentScreen: Successfully retrieved URL on retry: $retryUrl');
-                  widget.bookingData['paymentUrl'] = retryUrl;
-                  await _openPaymentUrl(retryUrl);
-                  return;
-                }
-              } catch (retryError) {
-                debugPrint('PaymentScreen: Retry also failed: $retryError');
-              }
-            }
-          } catch (getUrlError) {
-            debugPrint('PaymentScreen: Error getting existing payment URL: $getUrlError');
-          }
-          
-          // If we can't get URL, show message to user
-          debugPrint('PaymentScreen: Payment already exists, showing message to user');
-          setState(() {
-            _statusMessage = 'Đơn thanh toán đã được tạo trước đó. Vui lòng kiểm tra email hoặc liên hệ hỗ trợ để lấy liên kết thanh toán.';
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Đơn thanh toán đã tồn tại. Vui lòng kiểm tra email hoặc liên hệ hỗ trợ để lấy liên kết thanh toán.'),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 8),
-            ),
-          );
-        } else {
-          rethrow;
-        }
-      }
-    } catch (e) {
-      debugPrint('PaymentScreen: Error creating PayOS URL: $e');
-      setState(() {
-        _statusMessage =
-            'Không thể tạo liên kết thanh toán: ${e.toString().replaceFirst('Exception: ', '')}';
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content:
-              Text('Không thể tạo liên kết thanh toán: ${e.toString().replaceFirst('Exception: ', '')}'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isProcessing = false;
-        });
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     final bookingId = _getBookingId();
-    final customerName = _getCustomerName();
-    final customerPhone = _getCustomerPhone();
-    final customerEmail = _getCustomerEmail();
-    final createdAt = _getCreatedAt();
 
     return Scaffold(
       body: Container(
@@ -719,39 +1078,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     children: [
-                      // Icon thành công
-                      Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.check_circle,
-                          size: 80,
-                          color: Colors.green,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      const Text(
-                        'Đặt lịch thành công!',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Cảm ơn bạn đã sử dụng dịch vụ của chúng tôi',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 32),
-                      // Thông tin đơn hàng
+                      // Thông tin thanh toán
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
@@ -771,12 +1098,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             Row(
                               children: [
                                 Icon(
-                                  Icons.receipt_long,
+                                  Icons.payment,
                                   color: Theme.of(context).colorScheme.primary,
                                 ),
                                 const SizedBox(width: 8),
                                 const Text(
-                                  'Thông tin đơn hàng',
+                                  'Thông tin thanh toán',
                                   style: TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
@@ -793,108 +1120,183 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               ),
                               const Divider(),
                             ],
-                            if (customerName != null) ...[
-                              _buildInfoRow(
-                                'Họ và tên',
-                                customerName,
-                                Icons.person,
-                              ),
-                              const Divider(),
-                            ],
-                            if (customerPhone != null) ...[
-                              _buildInfoRow(
-                                'Số điện thoại',
-                                customerPhone,
-                                Icons.phone,
-                              ),
-                              const Divider(),
-                            ],
-                            if (customerEmail != null) ...[
-                              _buildInfoRow(
-                                'Email',
-                                customerEmail,
-                                Icons.email,
-                              ),
-                              const Divider(),
-                            ],
-                            if (createdAt != null) ...[
-                              _buildInfoRow(
-                                'Ngày đặt',
-                                _formatDate(createdAt),
-                                Icons.calendar_today,
-                              ),
-                              const Divider(),
-                            ],
-                            if (_getPaymentId() != null) ...[
-                              _buildInfoRow(
-                                'Mã thanh toán',
-                                _getPaymentId()!,
-                                Icons.payment,
-                              ),
-                              const Divider(),
-                            ],
                             const SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text(
-                                  'Tổng tiền',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                Text(
-                                  _formatCurrency(widget.totalAmount),
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: Theme.of(context).colorScheme.primary,
-                                  ),
-                                ),
-                              ],
+                            Builder(
+                              builder: (context) {
+                                final details = _getCalculationDetails();
+                                final baseTotal = details['baseTotal'] ?? 0.0;
+                                final platformFee = details['platformFee'] ?? 0.0;
+                                final platformFeePercent = details['platformFeePercent'] ?? 0.0;
+                                final remainingAmount = details['remainingAmount'] ?? 0.0;
+                                
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    // Tổng giá thuê cơ bản
+                                    if (baseTotal > 0) ...[
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            'Tổng giá thuê',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              color: Colors.grey[700],
+                                            ),
+                                          ),
+                                          Text(
+                                            _formatCurrency(baseTotal),
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                    ],
+                                    // Phí nền tảng (số tiền thanh toán)
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            platformFeePercent > 0
+                                                ? 'Phí nền tảng (${platformFeePercent.toStringAsFixed(0)}%)'
+                                                : 'Phí nền tảng (số tiền thanh toán)',
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          _formatCurrency(platformFee),
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: Theme.of(context).colorScheme.primary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    // Phần còn lại
+                                    if (remainingAmount > 0) ...[
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            'Phần thanh toán nhận thiết bị',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              color: Colors.grey[700],
+                                            ),
+                                          ),
+                                          Text(
+                                            _formatCurrency(remainingAmount),
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              color: Colors.grey[700],
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ],
+                                );
+                              },
                             ),
-                            if (widget.depositAmount > 0) ...[
-                              const SizedBox(height: 8),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      // Chọn phương thức thanh toán
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Chọn phương thức thanh toán',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            RadioListTile<int>(
+                              title: const Row(
                                 children: [
-                                  Text(
-                                    'Đặt cọc',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey[700],
-                                    ),
-                                  ),
-                                  Text(
-                                    _formatCurrency(widget.depositAmount),
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
+                                  Icon(Icons.account_balance_wallet, color: Colors.blue),
+                                  SizedBox(width: 8),
+                                  Text('Thanh toán bằng ví'),
                                 ],
                               ),
-                            ],
+                              value: 2,
+                              groupValue: _selectedPaymentMethod,
+                              onChanged: _isProcessing ? null : (value) {
+                                setState(() {
+                                  _selectedPaymentMethod = value!;
+                                });
+                              },
+                              activeColor: Colors.blue,
+                            ),
+                            RadioListTile<int>(
+                              title: const Row(
+                                children: [
+                                  Icon(Icons.payment, color: Colors.green),
+                                  SizedBox(width: 8),
+                                  Text('Thanh toán PayOS'),
+                                ],
+                              ),
+                              value: 1,
+                              groupValue: _selectedPaymentMethod,
+                              onChanged: _isProcessing ? null : (value) {
+                                setState(() {
+                                  _selectedPaymentMethod = value!;
+                                });
+                              },
+                              activeColor: Colors.green,
+                            ),
                           ],
                         ),
                       ),
                       const SizedBox(height: 24),
                       ElevatedButton.icon(
-                        onPressed: _isProcessing ? null : _startPayOsFlow,
-                        icon: const Icon(Icons.payment),
+                        onPressed: _isProcessing ? null : () {
+                          if (_selectedPaymentMethod == 2) {
+                            // Wallet payment
+                            _processWalletPayment();
+                          } else {
+                            // PayOS payment
+                            _startPayOsFlow();
+                          }
+                        },
+                        icon: Icon(_selectedPaymentMethod == 2 ? Icons.account_balance_wallet : Icons.payment),
                         label: Text(
                           _isProcessing
-                              ? 'Đang chuẩn bị thanh toán...'
-                              : 'Thanh toán qua PayOS',
+                              ? 'Đang xử lý...'
+                              : (_selectedPaymentMethod == 2 ? 'Thanh toán bằng ví' : 'Thanh toán qua PayOS'),
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
+                          backgroundColor: _selectedPaymentMethod == 2 ? Colors.blue : Colors.green,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 24,

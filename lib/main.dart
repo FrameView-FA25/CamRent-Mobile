@@ -4,6 +4,8 @@ import 'package:app_links/app_links.dart';
 import 'screens/login/login_screen.dart';
 import 'screens/booking/booking_list_screen.dart';
 import 'screens/payment/payment_success_screen.dart';
+import 'screens/payment/payment_failure_screen.dart';
+import 'services/api_service.dart';
 
 void main() {
   runApp(const MyApp());
@@ -49,14 +51,20 @@ class _MyAppState extends State<MyApp> {
     );
   }
 
-  void _handleDeepLink(Uri uri) {
+  Future<void> _handleDeepLink(Uri uri) async {
     debugPrint('MyApp: Handling deep link: $uri');
+    debugPrint('MyApp: Scheme: ${uri.scheme}, Host: ${uri.host}, Path: ${uri.path}');
+    debugPrint('MyApp: Query params: ${uri.queryParameters}');
+    debugPrint('MyApp: Full URI string: ${uri.toString()}');
     
-    final path = uri.path;
+    final path = uri.path.toLowerCase();
     final queryParams = uri.queryParameters;
-    final bookingId = queryParams['bookingId'];
-    final paymentId = queryParams['paymentId'];
-    final status = queryParams['status'];
+    final bookingId = queryParams['bookingId'] ?? queryParams['bookingid'] ?? queryParams['id'];
+    final paymentId = queryParams['paymentId'] ?? queryParams['paymentid'] ?? queryParams['payment_id'];
+    final status = (queryParams['status'] ?? queryParams['Status'] ?? '').toLowerCase();
+    final code = queryParams['code'] ?? queryParams['Code'] ?? '';
+    final desc = (queryParams['desc'] ?? queryParams['Desc'] ?? '').toLowerCase();
+    final uriString = uri.toString().toLowerCase();
     
     // Check for payment success/cancel in various formats
     bool isSuccess = false;
@@ -64,38 +72,149 @@ class _MyAppState extends State<MyApp> {
     
     // Check deeplink format: cameraforrent://payment/success
     if (uri.scheme == 'cameraforrent' && uri.host == 'payment') {
-      if (path.contains('/success') || status == 'success') {
+      if (path.contains('/success') || status == 'success' || code == '00') {
         isSuccess = true;
-      } else if (path.contains('/cancel') || status == 'cancel') {
+      } else if (path.contains('/cancel') || status == 'cancel' || status == 'cancelled') {
         isCancel = true;
       }
     }
     // Check HTTP redirect format: https://.../return?status=success
     else if (uri.scheme == 'https' || uri.scheme == 'http') {
-      if (path.contains('/return') || path.contains('/payment/return')) {
-        if (status == 'success' || queryParams.containsKey('success')) {
+      // Backend return URL: https://camrent-backend.up.railway.app/api/Payments/return
+      if (path.contains('/return') || path.contains('/payment/return') || path.contains('/payments/return')) {
+        if (status == 'success' || status == 'completed' || code == '00' || 
+            queryParams.containsKey('success') || desc.contains('success') ||
+            uriString.contains('status=success')) {
           isSuccess = true;
-        } else if (status == 'cancel' || queryParams.containsKey('cancel')) {
+        } else if (status == 'cancel' || status == 'cancelled' || status == 'failed' || 
+                   queryParams.containsKey('cancel') || desc.contains('cancel') ||
+                   uriString.contains('status=cancel')) {
           isCancel = true;
         }
-      } else if (path.contains('/payment/success') || uri.toString().contains('success')) {
+        // If no explicit status but has bookingId/paymentId, assume success (backend redirect)
+        else if (bookingId != null || paymentId != null) {
+          debugPrint('MyApp: Backend return URL detected with bookingId/paymentId, assuming success');
+          isSuccess = true;
+        }
+      } 
+      // PayOS return URL: https://pay.payos.vn/web/...
+      else if (uri.host.contains('payos.vn') || uri.host.contains('pay.payos')) {
+        if (status == 'success' || code == '00' || desc.contains('success') ||
+            uriString.contains('success') || uriString.contains('thanh+cong')) {
+          isSuccess = true;
+        } else if (status == 'cancel' || status == 'cancelled' || status == 'failed' || 
+                   desc.contains('cancel') || desc.contains('fail') ||
+                   uriString.contains('cancel') || uriString.contains('that+bai')) {
+          isCancel = true;
+        }
+        // PayOS often returns code=00 for success
+        else if (code == '00' || code == '0') {
+          isSuccess = true;
+        }
+      }
+      // Generic payment success/cancel paths
+      else if (path.contains('/payment/success') || path.contains('/success') || 
+               uriString.contains('success') || uriString.contains('thanh+cong')) {
         isSuccess = true;
-      } else if (path.contains('/payment/cancel') || uri.toString().contains('cancel')) {
+      } else if (path.contains('/payment/cancel') || path.contains('/cancel') || 
+                 uriString.contains('cancel') || uriString.contains('that+bai')) {
         isCancel = true;
       }
     }
+    
+    debugPrint('MyApp: isSuccess: $isSuccess, isCancel: $isCancel');
+    debugPrint('MyApp: bookingId: $bookingId, paymentId: $paymentId');
     
     if (isSuccess) {
       debugPrint('MyApp: Payment success detected from redirect');
       debugPrint('MyApp: Booking ID: $bookingId, Payment ID: $paymentId');
       
-      // Handle payment success
-      _handlePaymentSuccess(bookingId, paymentId);
+      // Verify payment status from backend before navigating
+      if (paymentId != null && paymentId.isNotEmpty) {
+        debugPrint('MyApp: Verifying payment status with backend API...');
+        await _verifyPaymentStatus(bookingId, paymentId);
+      } else {
+        // If no paymentId, just navigate to success screen
+        _handlePaymentSuccess(bookingId, paymentId);
+      }
     } else if (isCancel) {
       debugPrint('MyApp: Payment cancelled detected from redirect');
       
-      // Handle payment cancel
-      _handlePaymentCancel(bookingId, paymentId);
+      // Handle payment cancel - can still verify but likely cancelled
+      if (paymentId != null && paymentId.isNotEmpty) {
+        await _verifyPaymentStatus(bookingId, paymentId);
+      } else {
+        _handlePaymentCancel(bookingId, paymentId);
+      }
+    } else {
+      debugPrint('MyApp: Deep link not recognized as payment callback');
+      // If we have bookingId or paymentId, try to verify payment status
+      if (bookingId != null || paymentId != null) {
+        debugPrint('MyApp: Attempting to verify payment status from backend...');
+        await _verifyPaymentStatus(bookingId, paymentId);
+      }
+    }
+  }
+
+  Future<void> _verifyPaymentStatus(String? bookingId, String? paymentId) async {
+    // Check payment status from backend API using paymentId
+    try {
+      debugPrint('MyApp: Verifying payment status for bookingId: $bookingId, paymentId: $paymentId');
+      
+      // Priority: Use paymentId if available, otherwise bookingId
+      if (paymentId == null || paymentId.isEmpty) {
+        if (bookingId == null || bookingId.isEmpty) {
+          debugPrint('MyApp: No paymentId or bookingId provided, cannot verify payment status');
+          return;
+        }
+        // If no paymentId, we can't call getPaymentStatus
+        debugPrint('MyApp: No paymentId available, assuming success based on callback URL');
+        _handlePaymentSuccess(bookingId, paymentId);
+        return;
+      }
+      
+      // Call API to get payment status
+      try {
+        final statusData = await ApiService.getPaymentStatus(paymentId: paymentId);
+        debugPrint('MyApp: Payment status retrieved: $statusData');
+        
+        final isPaid = statusData['isPaid'] == true;
+        final paymentStatus = statusData['paymentStatus']?.toString().toLowerCase() ?? '';
+        final actualBookingId = statusData['bookingId']?.toString() ?? bookingId;
+        
+        debugPrint('MyApp: Payment isPaid: $isPaid, paymentStatus: $paymentStatus');
+        
+        // Determine success or failure based on payment status
+        if (isPaid || 
+            paymentStatus == 'paid' || 
+            paymentStatus == 'completed' || 
+            paymentStatus == 'success') {
+          debugPrint('MyApp: Payment confirmed as successful');
+          _handlePaymentSuccess(actualBookingId, paymentId);
+        } else if (paymentStatus == 'cancelled' || 
+                   paymentStatus == 'failed' || 
+                   paymentStatus == 'cancel') {
+          debugPrint('MyApp: Payment confirmed as cancelled/failed');
+          _handlePaymentCancel(actualBookingId, paymentId);
+        } else {
+          // If status is pending or unknown, treat as pending and show success screen
+          // (Backend webhook may still be processing)
+          debugPrint('MyApp: Payment status is pending/unknown, assuming success');
+          _handlePaymentSuccess(actualBookingId, paymentId);
+        }
+      } catch (e) {
+        debugPrint('MyApp: Error calling getPaymentStatus API: $e');
+        // If API call fails, assume success if we have paymentId from callback
+        // (Backend callback means payment was processed)
+        debugPrint('MyApp: Falling back to assume success based on callback URL');
+        _handlePaymentSuccess(bookingId, paymentId);
+      }
+    } catch (e) {
+      debugPrint('MyApp: Error verifying payment status: $e');
+      // Fallback: assume success if we have paymentId/bookingId
+      if (bookingId != null || paymentId != null) {
+        _handlePaymentSuccess(bookingId, paymentId);
+      }
     }
   }
 
@@ -123,35 +242,18 @@ class _MyAppState extends State<MyApp> {
   Future<void> _handlePaymentCancel(String? bookingId, String? paymentId) async {
     debugPrint('MyApp: Handling payment cancel - Booking: $bookingId, Payment: $paymentId');
     
-    // Show cancel message
+    // Navigate to payment failure screen
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final context = navigatorKey.currentContext;
       if (context != null) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            title: const Row(
-              children: [
-                Icon(Icons.cancel, color: Colors.orange, size: 28),
-                SizedBox(width: 8),
-                Text('Thanh toán đã hủy'),
-              ],
-            ),
-            content: const Text(
-              'Bạn đã hủy thanh toán. Đơn hàng vẫn được giữ lại. Bạn có thể thử thanh toán lại sau.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                child: const Text('Đóng'),
-              ),
-            ],
-          ),
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/payment-failure',
+          (route) => false,
+          arguments: {
+            'bookingId': bookingId,
+            'paymentId': paymentId,
+            'errorMessage': 'Bạn đã hủy thanh toán hoặc thanh toán thất bại.',
+          },
         );
       }
     });
@@ -191,6 +293,14 @@ class _MyAppState extends State<MyApp> {
             paymentId: args?['paymentId']?.toString(),
             totalAmount: args?['totalAmount']?.toDouble(),
             depositAmount: args?['depositAmount']?.toDouble(),
+          );
+        },
+        '/payment-failure': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return PaymentFailureScreen(
+            bookingId: args?['bookingId']?.toString(),
+            paymentId: args?['paymentId']?.toString(),
+            errorMessage: args?['errorMessage']?.toString(),
           );
         },
       },

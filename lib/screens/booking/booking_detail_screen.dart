@@ -150,7 +150,7 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
           : booking.id;
       final description = 'Thanh toán đơn hàng $bookingIdShort...';
 
-      final paymentUrl = await ApiService.initializePayOSPayment(
+      final paymentResult = await ApiService.initializePayOSPayment(
         paymentId: paymentId,
         amount: amount,
         description: description,
@@ -158,9 +158,18 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
         cancelUrl: cancelUrl,
       );
 
+      // Extract redirectUrl from Map response
+      final paymentUrl = paymentResult['redirectUrl']?.toString() ?? '';
+      final returnedPaymentId = paymentResult['paymentId']?.toString();
+
       debugPrint('PayOS payment URL: $paymentUrl');
+      debugPrint('PayOS payment ID: $returnedPaymentId');
 
       if (!mounted) return;
+
+      if (paymentUrl.isEmpty) {
+        throw Exception('Không nhận được URL thanh toán từ server');
+      }
 
       // Step 3: Launch payment URL
       final uri = Uri.parse(paymentUrl);
@@ -854,7 +863,8 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                                 context,
                                 icon: Icons.local_atm,
                                 label: 'Phí nền tảng',
-                                value: '${(platformFeePercent * 100).toStringAsFixed(0)}%',
+                                // platformFeePercent từ API đã là phần trăm (ví dụ: 20), không cần nhân 100
+                                value: '${platformFeePercent.toStringAsFixed(0)}%',
                               ),
                             ],
                           ],

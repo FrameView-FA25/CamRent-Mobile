@@ -397,6 +397,81 @@ class CameraModel {
     return _scenicImages[index];
   }
 
+  /// Sample data for demo screens (used in home_screen when no API data)
+  static List<CameraModel> getSampleCameras() {
+    return [
+      CameraModel(
+        id: '1',
+        name: 'Canon EOS R5',
+        brand: 'Canon',
+        modelCode: 'EOS R5',
+        description: 'Giá trị ước tính: 80 triệu VNĐ • Cọc tối thiểu: 10 triệu VNĐ',
+        pricePerDay: 500000,
+        imageUrl: _selectScenicImage(brand: 'Canon', id: '1'),
+        features: const [
+          'Chi nhánh: Demo',
+          'Đặt cọc 30%',
+          'Phí nền tảng 10%',
+        ],
+        branchName: 'Demo',
+        ownerName: 'Chủ sở hữu A',
+        branchManagerName: 'Quản lý chi nhánh A',
+        platformFeePercent: 10,
+        depositPercent: 30,
+        estimatedValue: 80000000,
+        depositCapMin: 10000000,
+        depositCapMax: 30000000,
+        mediaUrls: const [],
+      ),
+      CameraModel(
+        id: '2',
+        name: 'Sony A7 IV',
+        brand: 'Sony',
+        modelCode: 'A7 IV',
+        description: 'Giá trị ước tính: 70 triệu VNĐ • Cọc tối thiểu: 8 triệu VNĐ',
+        pricePerDay: 450000,
+        imageUrl: _selectScenicImage(brand: 'Sony', id: '2'),
+        features: const [
+          'Chi nhánh: Demo',
+          'Đặt cọc 25%',
+          'Phí nền tảng 10%',
+        ],
+        branchName: 'Demo',
+        ownerName: 'Chủ sở hữu B',
+        branchManagerName: 'Quản lý chi nhánh B',
+        platformFeePercent: 10,
+        depositPercent: 25,
+        estimatedValue: 70000000,
+        depositCapMin: 8000000,
+        depositCapMax: 25000000,
+        mediaUrls: const [],
+      ),
+      CameraModel(
+        id: '3',
+        name: 'Nikon Z6 II',
+        brand: 'Nikon',
+        modelCode: 'Z6 II',
+        description: 'Giá trị ước tính: 50 triệu VNĐ • Cọc tối thiểu: 6 triệu VNĐ',
+        pricePerDay: 400000,
+        imageUrl: _selectScenicImage(brand: 'Nikon', id: '3'),
+        features: const [
+          'Chi nhánh: Demo',
+          'Đặt cọc 20%',
+          'Phí nền tảng 10%',
+        ],
+        branchName: 'Demo',
+        ownerName: 'Chủ sở hữu C',
+        branchManagerName: 'Quản lý chi nhánh C',
+        platformFeePercent: 10,
+        depositPercent: 20,
+        estimatedValue: 50000000,
+        depositCapMin: 6000000,
+        depositCapMax: 20000000,
+        mediaUrls: const [],
+      ),
+    ];
+  }
+
   // Convert to JSON
   Map<String, dynamic> toJson() {
     return {
@@ -423,83 +498,4 @@ class CameraModel {
       'mediaUrls': mediaUrls,
     };
   }
-
-  // Sample data
-  static List<CameraModel> getSampleCameras() {
-    return [
-      CameraModel(
-        id: '1',
-        name: 'Canon EOS R5',
-        brand: 'Canon',
-        modelCode: 'EOS R5',
-        description:
-            'Giá trị ước tính: 80 triệu VNĐ • Cọc tối thiểu: 10 triệu VNĐ',
-        pricePerDay: 500000,
-        imageUrl: _selectScenicImage(brand: 'Canon', id: '1'),
-        features: const [
-          'Chi nhánh: Demo',
-          'Đặt cọc 30%',
-          'Phí nền tảng 20%',
-        ],
-        branchName: 'Demo',
-        ownerName: 'Chủ sở hữu A',
-        branchManagerName: 'Quản lý chi nhánh A',
-        platformFeePercent: 20,
-        depositPercent: 30,
-        estimatedValue: 80000000,
-        depositCapMin: 10000000,
-        depositCapMax: 30000000,
-        mediaUrls: const [],
-      ),
-      CameraModel(
-        id: '2',
-        name: 'Sony A7 IV',
-        brand: 'Sony',
-        modelCode: 'A7 IV',
-        description:
-            'Giá trị ước tính: 70 triệu VNĐ • Cọc tối thiểu: 8 triệu VNĐ',
-        pricePerDay: 450000,
-        imageUrl: _selectScenicImage(brand: 'Sony', id: '2'),
-        features: const [
-          'Chi nhánh: Demo',
-          'Đặt cọc 25%',
-          'Phí nền tảng 18%',
-        ],
-        branchName: 'Demo',
-        ownerName: 'Chủ sở hữu B',
-        branchManagerName: 'Quản lý chi nhánh B',
-        platformFeePercent: 18,
-        depositPercent: 25,
-        estimatedValue: 70000000,
-        depositCapMin: 8000000,
-        depositCapMax: 25000000,
-        mediaUrls: const [],
-      ),
-      CameraModel(
-        id: '3',
-        name: 'Nikon Z6 II',
-        brand: 'Nikon',
-        modelCode: 'Z6 II',
-        description:
-            'Giá trị ước tính: 50 triệu VNĐ • Cọc tối thiểu: 6 triệu VNĐ',
-        pricePerDay: 400000,
-        imageUrl: _selectScenicImage(brand: 'Nikon', id: '3'),
-        features: const [
-          'Chi nhánh: Demo',
-          'Đặt cọc 20%',
-          'Phí nền tảng 15%',
-        ],
-        branchName: 'Demo',
-        ownerName: 'Chủ sở hữu C',
-        branchManagerName: 'Quản lý chi nhánh C',
-        platformFeePercent: 15,
-        depositPercent: 20,
-        estimatedValue: 50000000,
-        depositCapMin: 6000000,
-        depositCapMax: 20000000,
-        mediaUrls: const [],
-      ),
-    ];
-  }
 }
-

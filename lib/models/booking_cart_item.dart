@@ -32,7 +32,8 @@ class BookingCartItem {
 
   int get rentalDays {
     if (startDate == null || endDate == null) return 0;
-    return endDate!.difference(startDate!).inDays + 1;
+    // Tính số ngày thuê: từ ngày 10 đến ngày 11 là 1 ngày (không +1)
+    return endDate!.difference(startDate!).inDays;
   }
 
   factory BookingCartItem.fromJson(Map<String, dynamic> json) {

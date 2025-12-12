@@ -113,10 +113,34 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         debugPrint('BookingHistoryScreen: No bookings to display');
       }
 
-      // Sort by created date (newest first)
+      // Sort by date (newest first)
+      // Priority: createdAt > pickupAt > returnAt
       bookings.sort((a, b) {
-        final aTs = a.createdAt ?? DateTime.now();
-        final bTs = b.createdAt ?? DateTime.now();
+        // Try createdAt first
+        DateTime? aDate = a.createdAt;
+        DateTime? bDate = b.createdAt;
+        
+        // If createdAt is null, use pickupAt
+        if (aDate == null) {
+          aDate = a.pickupAt;
+        }
+        if (bDate == null) {
+          bDate = b.pickupAt;
+        }
+        
+        // If still null, use returnAt
+        if (aDate == null) {
+          aDate = a.returnAt;
+        }
+        if (bDate == null) {
+          bDate = b.returnAt;
+        }
+        
+        // Default to now if still null
+        final aTs = aDate ?? DateTime.now();
+        final bTs = bDate ?? DateTime.now();
+        
+        // Sort descending (newest first)
         return bTs.compareTo(aTs);
       });
 
