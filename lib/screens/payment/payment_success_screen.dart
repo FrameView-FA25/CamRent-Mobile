@@ -240,39 +240,23 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(
-                                        'Tổng giá thuê',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey[700],
+                                      Expanded(
+                                        child: Text(
+                                          'Tổng giá thuê',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey[700],
+                                          ),
                                         ),
                                       ),
-                                      Text(
-                                        _formatCurrency(baseTotal),
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Phí nền tảng (${_platformFeePercent.toStringAsFixed(0)}%)',
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      Text(
-                                        _formatCurrency(platformFee),
-                                        style: TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                          color: Theme.of(context).colorScheme.primary,
+                                      Flexible(
+                                        child: Text(
+                                          _formatCurrency(baseTotal),
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                          textAlign: TextAlign.end,
                                         ),
                                       ),
                                     ],
@@ -281,18 +265,49 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(
-                                        'Phần thanh toán nhận thiết bị',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey[700],
+                                      Expanded(
+                                        child: Text(
+                                          'Phí nền tảng (${_platformFeePercent.toStringAsFixed(0)}%)',
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
                                       ),
-                                      Text(
-                                        _formatCurrency(remainingAmount),
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600,
+                                      Flexible(
+                                        child: Text(
+                                          _formatCurrency(platformFee),
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: Theme.of(context).colorScheme.primary,
+                                          ),
+                                          textAlign: TextAlign.end,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          'Phần thanh toán nhận thiết bị',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey[700],
+                                          ),
+                                        ),
+                                      ),
+                                      Flexible(
+                                        child: Text(
+                                          _formatCurrency(remainingAmount),
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                          textAlign: TextAlign.end,
                                         ),
                                       ),
                                     ],
@@ -304,18 +319,23 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text(
-                                    'Đặt cọc',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey[700],
+                                  Expanded(
+                                    child: Text(
+                                      'Đặt cọc',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey[700],
+                                      ),
                                     ),
                                   ),
-                                  Text(
-                                    _formatCurrency(widget.depositAmount),
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
+                                  Flexible(
+                                    child: Text(
+                                      _formatCurrency(widget.depositAmount),
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      textAlign: TextAlign.end,
                                     ),
                                   ),
                                 ],

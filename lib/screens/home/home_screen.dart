@@ -63,14 +63,20 @@ class _HomeScreenState extends State<HomeScreen> {
       for (final json in camerasData) {
         if (json is Map<String, dynamic>) {
           final camera = CameraModel.fromJson(json);
-          products.add(ProductItem.camera(camera));
+          // Chỉ hiển thị camera có branchName
+          if (camera.branchName.isNotEmpty) {
+            products.add(ProductItem.camera(camera));
+          }
         }
       }
 
       for (final json in accessoriesData) {
         if (json is Map<String, dynamic>) {
           final accessory = AccessoryModel.fromJson(json);
-          products.add(ProductItem.accessory(accessory));
+          // Chỉ hiển thị phụ kiện có branchName
+          if (accessory.branchName.isNotEmpty) {
+            products.add(ProductItem.accessory(accessory));
+          }
         }
       }
 
@@ -419,8 +425,10 @@ class _HomeScreenState extends State<HomeScreen> {
             stops: const [0.0, 0.4, 0.7, 1.0],
           ),
         ),
-        child: CustomScrollView(
-          slivers: [
+        child: RefreshIndicator(
+          onRefresh: _loadProducts,
+          child: CustomScrollView(
+            slivers: [
             SliverAppBar(
               expandedHeight: 120,
               floating: false,
@@ -454,46 +462,46 @@ class _HomeScreenState extends State<HomeScreen> {
                         Expanded(
                           child: Align(
                             alignment: Alignment.centerRight,
-              child: Padding(
+                            child: Padding(
                               padding: const EdgeInsets.only(right: 12),
-                              child: Stack(
-                                children: [
-                                  // Black stroke/outline - thicker for better visibility
-                                  Text(
-                                    'CAMERA',
-                                    style: GoogleFonts.cinzel(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w700,
-                                      foreground: Paint()
-                                        ..style = PaintingStyle.stroke
-                                        ..strokeWidth = 4
-                                        ..color = Colors.black,
-                                      letterSpacing: 2.0,
-                                      height: 1.0,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerRight,
+                                child: Stack(
+                                  children: [
+                                    // Black stroke/outline - thicker for better visibility
+                                    Text(
+                                      'CAMERA',
+                                      style: GoogleFonts.cinzel(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w700,
+                                        foreground: Paint()
+                                          ..style = PaintingStyle.stroke
+                                          ..strokeWidth = 4
+                                          ..color = Colors.black,
+                                        letterSpacing: 2.0,
+                                        height: 1.0,
+                                      ),
+                                      textAlign: TextAlign.right,
                                     ),
-                                    textAlign: TextAlign.right,
-                                    softWrap: false,
-                                    overflow: TextOverflow.visible,
-                                  ),
-                                  // White fill text on top
-                                  Text(
-                                    'CAMERA',
-                                    style: GoogleFonts.cinzel(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                      letterSpacing: 2.0,
-                                      height: 1.0,
+                                    // White fill text on top
+                                    Text(
+                                      'CAMERA',
+                                      style: GoogleFonts.cinzel(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                        letterSpacing: 2.0,
+                                        height: 1.0,
+                                      ),
+                                      textAlign: TextAlign.right,
                                     ),
-                                    textAlign: TextAlign.right,
-                                    softWrap: false,
-                                    overflow: TextOverflow.visible,
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
-                  ),
-                ),
+                          ),
+                        ),
                         // CamRent logo in the center
                         Container(
                           width: 100,
@@ -541,38 +549,40 @@ class _HomeScreenState extends State<HomeScreen> {
                             alignment: Alignment.centerLeft,
                             child: Padding(
                               padding: const EdgeInsets.only(left: 12),
-                              child: Stack(
-                                children: [
-                                  // Black stroke/outline - thicker for better visibility
-                                  Text(
-                                    'FOR RENT',
-                                    style: GoogleFonts.cinzel(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w700,
-                                      foreground: Paint()
-                                        ..style = PaintingStyle.stroke
-                                        ..strokeWidth = 4
-                                        ..color = Colors.black,
-                                      letterSpacing: 2.0,
-                                      height: 1.0,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Stack(
+                                  children: [
+                                    // Black stroke/outline - thicker for better visibility
+                                    Text(
+                                      'FOR RENT',
+                                      style: GoogleFonts.cinzel(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w700,
+                                        foreground: Paint()
+                                          ..style = PaintingStyle.stroke
+                                          ..strokeWidth = 4
+                                          ..color = Colors.black,
+                                        letterSpacing: 2.0,
+                                        height: 1.0,
+                                      ),
+                                      textAlign: TextAlign.left,
                                     ),
-                                    textAlign: TextAlign.left,
-                                    softWrap: false,
-                                  ),
-                                  // White fill text on top
-                                  Text(
-                                    'FOR RENT',
-                                    style: GoogleFonts.cinzel(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                      letterSpacing: 2.0,
-                                      height: 1.0,
+                                    // White fill text on top
+                                    Text(
+                                      'FOR RENT',
+                                      style: GoogleFonts.cinzel(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                        letterSpacing: 2.0,
+                                        height: 1.0,
+                                      ),
+                                      textAlign: TextAlign.left,
                                     ),
-                                    textAlign: TextAlign.left,
-                                    softWrap: false,
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -939,8 +949,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ],
+            ),
+          ),
         ),
-      ),
     );
   }
 

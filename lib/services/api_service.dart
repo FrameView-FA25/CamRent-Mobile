@@ -2666,7 +2666,7 @@ class ApiService {
   static Future<Map<String, dynamic>> getBookingById(String id) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/bookings/$id'),
+        Uri.parse('$baseUrl/Bookings/$id'),
         headers: await _getHeaders(requiresAuth: true, includeContentType: false),
       );
 
