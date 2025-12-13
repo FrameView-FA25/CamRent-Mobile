@@ -1,10 +1,8 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/rendering.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
@@ -313,11 +311,11 @@ class _ContractSigningScreenState extends State<ContractSigningScreen> {
                 Navigator.of(context).pop();
                 // Ensure bookingId is correctly set before navigation
                 final updatedBookingData = _ensureBookingIdInData(widget.bookingData);
-                // Navigate to payment amount screen
+                // Navigate directly to payment screen (skip PaymentAmountScreen)
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => PaymentAmountScreen(
+                    builder: (context) => PaymentScreen(
                       bookingData: updatedBookingData,
                       totalAmount: widget.totalAmount,
                       depositAmount: widget.depositAmount,
@@ -353,11 +351,11 @@ class _ContractSigningScreenState extends State<ContractSigningScreen> {
         // Ensure bookingId is correctly set before navigation
         final updatedBookingData = _ensureBookingIdInData(widget.bookingData);
         
-        // Navigate directly to payment amount screen
+        // Navigate directly to payment screen (skip PaymentAmountScreen)
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => PaymentAmountScreen(
+            builder: (context) => PaymentScreen(
               bookingData: updatedBookingData,
               totalAmount: widget.totalAmount,
               depositAmount: widget.depositAmount,
@@ -626,18 +624,22 @@ class _ContractSigningScreenState extends State<ContractSigningScreen> {
                                           ],
                                         ),
                                         const SizedBox(height: 16),
-                                        Container(
-                                          height: 120, // Match BE signature block height
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey[50],
-                                            borderRadius: BorderRadius.circular(12),
-                                            border: Border.all(
-                                              color: Colors.grey[300]!,
-                                              width: 2,
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: Container(
+                                            height: 120, // Match BE signature block height
+                                            width: double.infinity,
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey[50],
+                                              borderRadius: BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: Colors.grey[300]!,
+                                                width: 2,
+                                              ),
                                             ),
-                                          ),
-                                          child: SignaturePad(
-                                            key: _signatureKey,
+                                            child: SignaturePad(
+                                              key: _signatureKey,
+                                            ),
                                           ),
                                         ),
                                         const SizedBox(height: 12),
@@ -736,11 +738,11 @@ class _ContractSigningScreenState extends State<ContractSigningScreen> {
                           onPressed: () {
                             // Ensure bookingId is correctly set before navigation
                             final updatedBookingData = _ensureBookingIdInData(widget.bookingData);
-                            // Navigate to payment amount screen if already signed
+                            // Navigate directly to payment screen (skip PaymentAmountScreen)
                             Navigator.pushReplacement(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => PaymentAmountScreen(
+                                builder: (context) => PaymentScreen(
                                   bookingData: updatedBookingData,
                                   totalAmount: widget.totalAmount,
                                   depositAmount: widget.depositAmount,
@@ -803,482 +805,6 @@ class _ContractSigningScreenState extends State<ContractSigningScreen> {
   }
 }
 
-// Payment Amount Screen
-class PaymentAmountScreen extends StatelessWidget {
-  final Map<String, dynamic> bookingData;
-  final double totalAmount;
-  final double depositAmount;
-
-  const PaymentAmountScreen({
-    super.key,
-    required this.bookingData,
-    required this.totalAmount,
-    required this.depositAmount,
-  });
-
-  String _formatCurrency(double value) {
-    if (value <= 0) return '0 VNĐ';
-    final raw = value.toStringAsFixed(0);
-    final buffer = StringBuffer();
-    for (int i = 0; i < raw.length; i++) {
-      buffer.write(raw[i]);
-      final position = raw.length - i - 1;
-      if (position % 3 == 0 && position != 0) {
-        buffer.write(',');
-      }
-    }
-    return '${buffer.toString()} VNĐ';
-  }
-
-  // Tính số tiền thanh toán: số ngày thuê * giá thuê theo ngày * (1 + phí nền tảng %)
-  // Helper method để lấy thông tin tính toán
-  Map<String, double> _getCalculationDetails() {
-    try {
-      final pickupAtStr = bookingData['pickupAt']?.toString();
-      final returnAtStr = bookingData['returnAt']?.toString();
-      var baseDailyRateRaw = bookingData['snapshotBaseDailyRate'];
-      var platformFeePercentRaw = bookingData['snapshotPlatformFeePercent'];
-      
-      // Ưu tiên lấy tổng giá thuê từ booking data
-      var snapshotRentalTotalRaw = bookingData['snapshotRentalTotal'];
-      final snapshotRentalTotal = (snapshotRentalTotalRaw is num ? snapshotRentalTotalRaw.toDouble() : (snapshotRentalTotalRaw?.toDouble() ?? 0.0));
-      
-      // Fallback: Thử lấy từ items nếu không có trong snapshot
-      if (baseDailyRateRaw == null || (baseDailyRateRaw is num && baseDailyRateRaw <= 0)) {
-        final items = bookingData['items'];
-        if (items is List && items.isNotEmpty) {
-          final firstItem = items[0];
-          if (firstItem is Map<String, dynamic>) {
-            final camera = firstItem['camera'];
-            if (camera is Map<String, dynamic>) {
-              baseDailyRateRaw ??= camera['pricePerDay'] ?? camera['price_per_day'] ?? camera['dailyRate'] ?? camera['daily_rate'];
-            }
-            // Thử lấy từ item trực tiếp
-            baseDailyRateRaw ??= firstItem['pricePerDay'] ?? firstItem['price_per_day'] ?? firstItem['dailyRate'] ?? firstItem['daily_rate'];
-          }
-        }
-      }
-      
-      if (platformFeePercentRaw == null || (platformFeePercentRaw is num && platformFeePercentRaw <= 0)) {
-        final items = bookingData['items'];
-        if (items is List && items.isNotEmpty) {
-          final firstItem = items[0];
-          if (firstItem is Map<String, dynamic>) {
-            final camera = firstItem['camera'];
-            if (camera is Map<String, dynamic>) {
-              platformFeePercentRaw ??= camera['platformFeePercent'] ?? camera['platform_fee_percent'] ?? camera['feePercent'] ?? camera['fee_percent'];
-            }
-            // Thử lấy từ item trực tiếp
-            platformFeePercentRaw ??= firstItem['platformFeePercent'] ?? firstItem['platform_fee_percent'] ?? firstItem['feePercent'] ?? firstItem['fee_percent'];
-          }
-        }
-        // Mặc định 10% nếu vẫn không có
-        if (platformFeePercentRaw == null || (platformFeePercentRaw is num && platformFeePercentRaw <= 0)) {
-          platformFeePercentRaw = 10.0;
-        }
-      }
-      
-      final baseDailyRate = (baseDailyRateRaw is num ? baseDailyRateRaw.toDouble() : (baseDailyRateRaw?.toDouble() ?? 0.0));
-      var platformFeePercent = (platformFeePercentRaw is num ? platformFeePercentRaw.toDouble() : (platformFeePercentRaw?.toDouble() ?? 10.0));
-
-      // ƯU TIÊN: Nếu có snapshotRentalTotal từ booking, sử dụng nó làm baseTotal
-      // Đây là nguồn dữ liệu chính xác nhất từ backend
-      if (snapshotRentalTotal > 0) {
-        final baseTotal = snapshotRentalTotal;
-        final platformFee = baseTotal * (platformFeePercent / 100);
-        final remainingAmount = baseTotal - platformFee;
-        debugPrint('ContractSigningScreen: Using snapshotRentalTotal from booking: $baseTotal');
-        return {
-          'baseTotal': baseTotal,
-          'platformFee': platformFee,
-          'platformFeePercent': platformFeePercent,
-          'paymentAmount': platformFee,
-          'remainingAmount': remainingAmount,
-        };
-      }
-      
-      debugPrint('ContractSigningScreen: snapshotRentalTotal not available, calculating from dates and rates');
-
-      if (pickupAtStr == null || returnAtStr == null) {
-        // Nếu không có dates, tính từ totalAmount với platformFeePercent mặc định
-        if (totalAmount > 0 && platformFeePercent > 0) {
-          // Giả sử totalAmount là baseTotal, tính platformFee
-          final estimatedBaseTotal = totalAmount;
-          final platformFee = estimatedBaseTotal * (platformFeePercent / 100);
-          return {
-            'baseTotal': estimatedBaseTotal,
-            'platformFee': platformFee,
-            'platformFeePercent': platformFeePercent,
-            'paymentAmount': platformFee,
-            'remainingAmount': estimatedBaseTotal - platformFee,
-          };
-        }
-        return {
-          'baseTotal': totalAmount,
-          'platformFee': 0.0,
-          'platformFeePercent': platformFeePercent,
-          'paymentAmount': totalAmount,
-          'remainingAmount': 0.0,
-        };
-      }
-
-      final pickupAt = DateTime.parse(pickupAtStr);
-      final returnAt = DateTime.parse(returnAtStr);
-      final rentalDays = returnAt.difference(pickupAt).inDays;
-      
-      if (rentalDays <= 0) {
-        // Nếu rentalDays <= 0, tính từ totalAmount
-        if (totalAmount > 0 && platformFeePercent > 0) {
-          final estimatedBaseTotal = totalAmount;
-          final platformFee = estimatedBaseTotal * (platformFeePercent / 100);
-          return {
-            'baseTotal': estimatedBaseTotal,
-            'platformFee': platformFee,
-            'platformFeePercent': platformFeePercent,
-            'paymentAmount': platformFee,
-            'remainingAmount': estimatedBaseTotal - platformFee,
-          };
-        }
-        return {
-          'baseTotal': totalAmount,
-          'platformFee': 0.0,
-          'platformFeePercent': platformFeePercent,
-          'paymentAmount': totalAmount,
-          'remainingAmount': 0.0,
-        };
-      }
-
-      // Nếu baseDailyRate vẫn là 0, tính từ totalAmount và rentalDays
-      double finalBaseDailyRate = baseDailyRate;
-      if (finalBaseDailyRate <= 0 && totalAmount > 0 && rentalDays > 0) {
-        finalBaseDailyRate = totalAmount / rentalDays;
-      }
-
-      if (finalBaseDailyRate <= 0) {
-        // Fallback cuối cùng: sử dụng totalAmount
-        if (totalAmount > 0 && platformFeePercent > 0) {
-          final estimatedBaseTotal = totalAmount;
-          final platformFee = estimatedBaseTotal * (platformFeePercent / 100);
-          return {
-            'baseTotal': estimatedBaseTotal,
-            'platformFee': platformFee,
-            'platformFeePercent': platformFeePercent,
-            'paymentAmount': platformFee,
-            'remainingAmount': estimatedBaseTotal - platformFee,
-          };
-        }
-        return {
-          'baseTotal': totalAmount,
-          'platformFee': 0.0,
-          'platformFeePercent': platformFeePercent,
-          'paymentAmount': totalAmount,
-          'remainingAmount': 0.0,
-        };
-      }
-
-      final baseTotal = rentalDays * finalBaseDailyRate; // Tổng giá thuê cơ bản
-      final platformFee = baseTotal * (platformFeePercent / 100); // Phí nền tảng = % của tổng giá thuê
-      final remainingAmount = baseTotal - platformFee; // Phần còn lại (thanh toán khi nhận thiết bị)
-
-      return {
-        'baseTotal': baseTotal.toDouble(),
-        'platformFee': platformFee.toDouble(),
-        'platformFeePercent': platformFeePercent.toDouble(), // Thêm phần trăm để hiển thị
-        'paymentAmount': platformFee.toDouble(), // Số tiền thanh toán = phí nền tảng
-        'remainingAmount': remainingAmount.toDouble(),
-      };
-    } catch (e) {
-      debugPrint('ContractSigningScreen: Error calculating: $e');
-      // Fallback: tính từ totalAmount với platformFeePercent mặc định 10%
-      final platformFeePercent = 10.0;
-      if (totalAmount > 0) {
-        final platformFee = totalAmount * (platformFeePercent / 100);
-        return {
-          'baseTotal': totalAmount,
-          'platformFee': platformFee,
-          'platformFeePercent': platformFeePercent,
-          'paymentAmount': platformFee,
-          'remainingAmount': totalAmount - platformFee,
-        };
-      }
-      return {
-        'baseTotal': 0.0,
-        'platformFee': 0.0,
-        'platformFeePercent': platformFeePercent,
-        'paymentAmount': totalAmount,
-        'remainingAmount': 0.0,
-      };
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              const Color(0xFFFF6600).withOpacity(0.25),
-              const Color(0xFFFF6600).withOpacity(0.2),
-              const Color(0xFF00A651).withOpacity(0.15),
-              const Color(0xFF0066CC).withOpacity(0.1),
-            ],
-            stops: const [0.0, 0.4, 0.7, 1.0],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // App Bar
-              Container(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Số tiền thanh toán',
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            'Xác nhận số tiền cần thanh toán',
-                            style: TextStyle(fontSize: 14, color: Colors.grey),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Content
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      // Success Icon
-                      Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.check_circle,
-                          size: 80,
-                          color: Colors.green,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      const Text(
-                        'Hợp đồng đã được ký',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-                      // Payment Amount Card
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.payment,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  'Số tiền thanh toán',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 24),
-                            Builder(
-                              builder: (context) {
-                                final details = _getCalculationDetails();
-                                final baseTotal = details['baseTotal'] ?? 0.0;
-                                final platformFee = details['platformFee'] ?? 0.0;
-                                final platformFeePercent = details['platformFeePercent'] ?? 0.0;
-                                final remainingAmount = details['remainingAmount'] ?? 0.0;
-                                
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    // Tổng giá thuê cơ bản
-                                    if (baseTotal > 0) ...[
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          const Text(
-                                            'Tổng giá thuê',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: Colors.grey,
-                                            ),
-                                          ),
-                                          Text(
-                                            _formatCurrency(baseTotal),
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 8),
-                                    ],
-                                    // Phí nền tảng (số tiền thanh toán)
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            platformFeePercent > 0
-                                                ? 'Phí nền tảng (${platformFeePercent.toStringAsFixed(0)}%)'
-                                                : 'Phí nền tảng (số tiền thanh toán)',
-                                            style: const TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                        Text(
-                                          _formatCurrency(platformFee),
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                            color: Theme.of(context).colorScheme.primary,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    // Phần còn lại
-                                    if (remainingAmount > 0) ...[
-                                      const SizedBox(height: 8),
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            'Phần thanh toán khi nhận thiết bị',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: Colors.grey[600],
-                                            ),
-                                          ),
-                                          Text(
-                                            _formatCurrency(remainingAmount),
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: Colors.grey[700],
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ],
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                    ],
-                  ),
-                ),
-              ),
-              // Bottom Button
-              SafeArea(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, -4),
-                      ),
-                    ],
-                  ),
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      // Navigate to payment screen
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => PaymentScreen(
-                            bookingData: bookingData,
-                            totalAmount: totalAmount,
-                            depositAmount: depositAmount,
-                          ),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.payment),
-                    label: const Text(
-                      'Tiếp tục thanh toán',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // Signature Pad Widget (reused from booking_detail_screen)
 class SignaturePad extends StatefulWidget {
   const SignaturePad({super.key});
@@ -1326,36 +852,39 @@ class SignaturePadState extends State<SignaturePad> {
       throw Exception('Invalid signature bounds');
     }
 
-    // BE signature block: height 120, FitWidth scaling
-    // Target: max height 120px, width should fit the signature naturally (FitWidth)
-    const maxHeight = 120.0;
-    const maxWidth = 250.0; // Smaller max width for signature to match BE
+    // Tối ưu kích thước chữ ký để rõ ràng và không quá lớn
+    // Kích thước phù hợp: 80-120px chiều cao để đảm bảo chất lượng khi hiển thị
+    const maxHeight = 50.0; // Tăng lên 100px để chữ ký rõ ràng hơn
+    const maxWidth = 10100.0; // Tăng lên 200px để tỷ lệ phù hợp
     
-    // Calculate scale to fit width (FitWidth like BE), but don't exceed max height
+    // Calculate scale to maintain aspect ratio
     final widthScale = maxWidth / (signatureWidth + padding * 2);
     final heightScale = maxHeight / (signatureHeight + padding * 2);
     
-    // Use FitWidth approach: scale to fit width, but limit height
-    double scale = widthScale;
+    // Use the smaller scale to fit within bounds while maintaining aspect ratio
+    double scale = widthScale < heightScale ? widthScale : heightScale;
+    
+    // Đảm bảo scale không quá nhỏ (tối thiểu 0.5) để chữ ký không bị quá nhỏ
+    scale = scale.clamp(0.5, 2.0);
+    
     double finalWidth = (signatureWidth + padding * 2) * scale;
     double finalHeight = (signatureHeight + padding * 2) * scale;
     
-    // If height exceeds max, scale down to fit height
-    if (finalHeight > maxHeight) {
-      scale = heightScale;
-      finalWidth = (signatureWidth + padding * 2) * scale;
-      finalHeight = (signatureHeight + padding * 2) * scale;
-    }
-    
-    final width = finalWidth.ceil();
-    final height = finalHeight.ceil().clamp(1, maxHeight.toInt());
+    // Đảm bảo kích thước không vượt quá max và không quá nhỏ
+    final width = finalWidth.ceil().clamp(60, maxWidth.toInt());
+    final height = finalHeight.ceil().clamp(40, maxHeight.toInt());
 
-    // Create picture recorder
+    // Create picture recorder với kích thước tối ưu
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
+    
+    // Tăng stroke width để chữ ký đậm và rõ ràng hơn
+    // Scale stroke width theo tỷ lệ nhưng đảm bảo tối thiểu 2.0 và tối đa 4.0
+    final strokeWidth = (3.0 * scale).clamp(2.0, 4.0);
+    
     final paint = Paint()
       ..color = Colors.black
-      ..strokeWidth = 2 * scale // Scale stroke width
+      ..strokeWidth = strokeWidth
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
@@ -1369,9 +898,12 @@ class SignaturePadState extends State<SignaturePad> {
       }
     }
 
-    // Convert to image
+    // Convert to image với kích thước tối ưu
     final picture = recorder.endRecording();
     final image = await picture.toImage(width, height);
+    
+    // Không resize thêm nữa để giữ chất lượng chữ ký
+    // Kích thước hiện tại (60-200px) đã phù hợp cho hiển thị trên hợp đồng
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
 
     if (byteData == null) {
@@ -1383,26 +915,38 @@ class SignaturePadState extends State<SignaturePad> {
 
   @override
   Widget build(BuildContext context) {
-    return Listener(
-      onPointerDown: (event) {
-        setState(() {
-          _points.add(event.localPosition);
-        });
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Listener(
+          onPointerDown: (event) {
+            // Giới hạn điểm trong bounds của container
+            final x = event.localPosition.dx.clamp(0.0, constraints.maxWidth);
+            final y = event.localPosition.dy.clamp(0.0, constraints.maxHeight);
+            setState(() {
+              _points.add(Offset(x, y));
+            });
+          },
+          onPointerMove: (event) {
+            // Giới hạn điểm trong bounds của container
+            final x = event.localPosition.dx.clamp(0.0, constraints.maxWidth);
+            final y = event.localPosition.dy.clamp(0.0, constraints.maxHeight);
+            setState(() {
+              _points.add(Offset(x, y));
+            });
+          },
+          onPointerUp: (event) {
+            setState(() {
+              _points.add(Offset.zero); // Mark end of stroke
+            });
+          },
+          child: ClipRect(
+            child: CustomPaint(
+              painter: SignaturePainter(_points),
+              size: Size(constraints.maxWidth, constraints.maxHeight),
+            ),
+          ),
+        );
       },
-      onPointerMove: (event) {
-        setState(() {
-          _points.add(event.localPosition);
-        });
-      },
-      onPointerUp: (event) {
-        setState(() {
-          _points.add(Offset.zero); // Mark end of stroke
-        });
-      },
-      child: CustomPaint(
-        painter: SignaturePainter(_points),
-        size: Size.infinite,
-      ),
     );
   }
 }

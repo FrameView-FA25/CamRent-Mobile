@@ -231,94 +231,74 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return '${buffer.toString()} VNĐ';
   }
 
-  // Tính số tiền thanh toán: số ngày thuê * giá thuê theo ngày * (1 + phí nền tảng %)
-  // Helper method để lấy thông tin tính toán
+  // Tính số tiền thanh toán từ booking data
+  // Ưu tiên sử dụng snapshot data từ backend (chính xác nhất)
   Map<String, double> _getCalculationDetails() {
     try {
-      final pickupAtStr = widget.bookingData['pickupAt']?.toString();
-      final returnAtStr = widget.bookingData['returnAt']?.toString();
-      var baseDailyRateRaw = widget.bookingData['snapshotBaseDailyRate'];
-      var platformFeePercentRaw = widget.bookingData['snapshotPlatformFeePercent'];
+      debugPrint('PaymentScreen: Calculating payment details from booking data');
+      debugPrint('PaymentScreen: bookingData keys: ${widget.bookingData.keys.toList()}');
       
-      // Ưu tiên lấy tổng giá thuê từ booking data
+      // ƯU TIÊN 1: Sử dụng snapshot data từ backend (chính xác nhất)
       var snapshotRentalTotalRaw = widget.bookingData['snapshotRentalTotal'];
-      final snapshotRentalTotal = (snapshotRentalTotalRaw is num ? snapshotRentalTotalRaw.toDouble() : (snapshotRentalTotalRaw?.toDouble() ?? 0.0));
+      var snapshotPlatformFeePercentRaw = widget.bookingData['snapshotPlatformFeePercent'];
       
-      // Fallback: Thử lấy từ items nếu không có trong snapshot
-      if (baseDailyRateRaw == null || (baseDailyRateRaw is num && baseDailyRateRaw <= 0)) {
-        final items = widget.bookingData['items'];
-        if (items is List && items.isNotEmpty) {
-          final firstItem = items[0];
-          if (firstItem is Map<String, dynamic>) {
-            final camera = firstItem['camera'];
-            if (camera is Map<String, dynamic>) {
-              baseDailyRateRaw ??= camera['pricePerDay'] ?? camera['price_per_day'] ?? camera['dailyRate'] ?? camera['daily_rate'];
-            }
-            // Thử lấy từ item trực tiếp
-            baseDailyRateRaw ??= firstItem['pricePerDay'] ?? firstItem['price_per_day'] ?? firstItem['dailyRate'] ?? firstItem['daily_rate'];
-          }
-        }
-      }
+      final snapshotRentalTotal = (snapshotRentalTotalRaw is num 
+          ? snapshotRentalTotalRaw.toDouble() 
+          : (snapshotRentalTotalRaw?.toDouble() ?? 0.0));
       
-      if (platformFeePercentRaw == null || (platformFeePercentRaw is num && platformFeePercentRaw <= 0)) {
-        final items = widget.bookingData['items'];
-        if (items is List && items.isNotEmpty) {
-          final firstItem = items[0];
-          if (firstItem is Map<String, dynamic>) {
-            final camera = firstItem['camera'];
-            if (camera is Map<String, dynamic>) {
-              platformFeePercentRaw ??= camera['platformFeePercent'] ?? camera['platform_fee_percent'] ?? camera['feePercent'] ?? camera['fee_percent'];
-            }
-            // Thử lấy từ item trực tiếp
-            platformFeePercentRaw ??= firstItem['platformFeePercent'] ?? firstItem['platform_fee_percent'] ?? firstItem['feePercent'] ?? firstItem['fee_percent'];
-          }
-        }
-        // Mặc định 10% nếu vẫn không có
-        if (platformFeePercentRaw == null || (platformFeePercentRaw is num && platformFeePercentRaw <= 0)) {
-          platformFeePercentRaw = 10.0;
-        }
-      }
+      final snapshotPlatformFeePercent = (snapshotPlatformFeePercentRaw is num 
+          ? snapshotPlatformFeePercentRaw.toDouble() 
+          : (snapshotPlatformFeePercentRaw?.toDouble() ?? 0.0));
       
-      final baseDailyRate = (baseDailyRateRaw is num ? baseDailyRateRaw.toDouble() : (baseDailyRateRaw?.toDouble() ?? 0.0));
-      var platformFeePercent = (platformFeePercentRaw is num ? platformFeePercentRaw.toDouble() : (platformFeePercentRaw?.toDouble() ?? 10.0));
-
-      // ƯU TIÊN: Nếu có snapshotRentalTotal từ booking, sử dụng nó làm baseTotal
-      // Đây là nguồn dữ liệu chính xác nhất từ backend
+      // Nếu có snapshotRentalTotal từ backend, sử dụng nó (chính xác nhất)
       if (snapshotRentalTotal > 0) {
         final baseTotal = snapshotRentalTotal;
+        final platformFeePercent = snapshotPlatformFeePercent > 0 ? snapshotPlatformFeePercent : 10.0;
         final platformFee = baseTotal * (platformFeePercent / 100);
         final remainingAmount = baseTotal - platformFee;
-        debugPrint('PaymentScreen: Using snapshotRentalTotal from booking: $baseTotal');
+        
+        debugPrint('PaymentScreen: Using snapshot data from backend:');
+        debugPrint('  - snapshotRentalTotal: $baseTotal');
+        debugPrint('  - snapshotPlatformFeePercent: $platformFeePercent');
+        debugPrint('  - platformFee (paymentAmount): $platformFee');
+        debugPrint('  - remainingAmount: $remainingAmount');
+        
         return {
           'baseTotal': baseTotal,
           'platformFee': platformFee,
           'platformFeePercent': platformFeePercent,
-          'paymentAmount': platformFee,
+          'paymentAmount': platformFee, // Số tiền thanh toán = phí đặt cọc thuêthuê
           'remainingAmount': remainingAmount,
         };
       }
       
-      debugPrint('PaymentScreen: snapshotRentalTotal not available, calculating from dates and rates');
-
+      debugPrint('PaymentScreen: snapshotRentalTotal not available, calculating from dates and items');
+      
+      // FALLBACK: Tính toán từ dates và items
+      final pickupAtStr = widget.bookingData['pickupAt']?.toString();
+      final returnAtStr = widget.bookingData['returnAt']?.toString();
+      
       if (pickupAtStr == null || returnAtStr == null) {
-        // Nếu không có dates, giả sử totalAmount là baseTotal (tổng giá thuê)
-        // Đồng bộ với contract_signing_screen
+        debugPrint('PaymentScreen: No dates available, using fallback');
+        // Nếu không có dates, sử dụng totalAmount và depositAmount
+        final platformFeePercent = snapshotPlatformFeePercent > 0 ? snapshotPlatformFeePercent : 10.0;
         if (widget.totalAmount > 0 && platformFeePercent > 0) {
-          final estimatedBaseTotal = widget.totalAmount;
-          final platformFee = estimatedBaseTotal * (platformFeePercent / 100);
+          // Giả sử totalAmount là baseTotal (tổng giá thuê)
+          final baseTotal = widget.totalAmount;
+          final platformFee = baseTotal * (platformFeePercent / 100);
           return {
-            'baseTotal': estimatedBaseTotal,
-            'platformFee': platformFee,
-            'platformFeePercent': platformFeePercent,
-            'paymentAmount': platformFee,
-            'remainingAmount': estimatedBaseTotal - platformFee,
+            'baseTotal': baseTotal.toDouble(),
+            'platformFee': platformFee.toDouble(),
+            'platformFeePercent': platformFeePercent.toDouble(),
+            'paymentAmount': platformFee.toDouble(),
+            'remainingAmount': (baseTotal - platformFee).toDouble(),
           };
         }
         return {
-          'baseTotal': widget.totalAmount,
+          'baseTotal': widget.totalAmount.toDouble(),
           'platformFee': 0.0,
-          'platformFeePercent': platformFeePercent,
-          'paymentAmount': widget.totalAmount,
+          'platformFeePercent': platformFeePercent.toDouble(),
+          'paymentAmount': (widget.depositAmount > 0 ? widget.depositAmount : widget.totalAmount).toDouble(),
           'remainingAmount': 0.0,
         };
       }
@@ -328,89 +308,178 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final rentalDays = returnAt.difference(pickupAt).inDays;
       
       if (rentalDays <= 0) {
-        // Nếu rentalDays <= 0, giả sử totalAmount là baseTotal (tổng giá thuê)
-        // Đồng bộ với contract_signing_screen
+        debugPrint('PaymentScreen: Invalid rental days: $rentalDays');
+        final platformFeePercent = snapshotPlatformFeePercent > 0 ? snapshotPlatformFeePercent : 10.0;
         if (widget.totalAmount > 0 && platformFeePercent > 0) {
-          final estimatedBaseTotal = widget.totalAmount;
-          final platformFee = estimatedBaseTotal * (platformFeePercent / 100);
+          final baseTotal = widget.totalAmount;
+          final platformFee = baseTotal * (platformFeePercent / 100);
           return {
-            'baseTotal': estimatedBaseTotal,
-            'platformFee': platformFee,
-            'platformFeePercent': platformFeePercent,
-            'paymentAmount': platformFee,
-            'remainingAmount': estimatedBaseTotal - platformFee,
+            'baseTotal': baseTotal.toDouble(),
+            'platformFee': platformFee.toDouble(),
+            'platformFeePercent': platformFeePercent.toDouble(),
+            'paymentAmount': platformFee.toDouble(),
+            'remainingAmount': (baseTotal - platformFee).toDouble(),
           };
         }
         return {
-          'baseTotal': widget.totalAmount,
+          'baseTotal': widget.totalAmount.toDouble(),
           'platformFee': 0.0,
-          'platformFeePercent': platformFeePercent,
-          'paymentAmount': widget.totalAmount,
+          'platformFeePercent': platformFeePercent.toDouble(),
+          'paymentAmount': (widget.depositAmount > 0 ? widget.depositAmount : widget.totalAmount).toDouble(),
           'remainingAmount': 0.0,
         };
       }
 
-      // Nếu baseDailyRate vẫn là 0, tính từ totalAmount và rentalDays
-      double finalBaseDailyRate = baseDailyRate;
-      if (finalBaseDailyRate <= 0 && widget.totalAmount > 0 && rentalDays > 0) {
-        finalBaseDailyRate = widget.totalAmount / rentalDays;
-      }
-
-      if (finalBaseDailyRate <= 0) {
-        // Fallback cuối cùng: giả sử totalAmount là baseTotal (tổng giá thuê)
-        // Đồng bộ với contract_signing_screen
-        if (widget.totalAmount > 0 && platformFeePercent > 0) {
-          final estimatedBaseTotal = widget.totalAmount;
-          final platformFee = estimatedBaseTotal * (platformFeePercent / 100);
+      // Tính từ items
+      final items = widget.bookingData['items'];
+      if (items is List && items.isNotEmpty) {
+        double baseTotal = 0.0;
+        double platformFeePercent = snapshotPlatformFeePercent > 0 ? snapshotPlatformFeePercent : 10.0;
+        
+        for (final item in items) {
+          if (item is Map<String, dynamic>) {
+            // Lấy giá thuê theo ngày
+            var pricePerDayRaw = item['pricePerDay'] ?? 
+                                item['price_per_day'] ?? 
+                                item['dailyRate'] ?? 
+                                item['daily_rate'] ??
+                                item['snapshotPricePerDay'];
+            
+            // Lấy từ camera object nếu có
+            final camera = item['camera'];
+            if (camera is Map<String, dynamic>) {
+              pricePerDayRaw ??= camera['pricePerDay'] ?? 
+                                 camera['price_per_day'] ?? 
+                                 camera['dailyRate'] ?? 
+                                 camera['daily_rate'] ??
+                                 camera['baseDailyRate'];
+            }
+            
+            final pricePerDay = (pricePerDayRaw is num 
+                ? pricePerDayRaw.toDouble() 
+                : (pricePerDayRaw?.toDouble() ?? 0.0));
+            
+            // Lấy quantity
+            final quantity = (item['quantity'] is num 
+                ? (item['quantity'] as num).toInt() 
+                : (int.tryParse(item['quantity']?.toString() ?? '1') ?? 1));
+            
+            // Lấy platformFeePercent từ item nếu chưa có
+            if (platformFeePercent == 10.0) {
+              var itemFeePercent = item['platformFeePercent'] ?? 
+                                   item['platform_fee_percent'] ?? 
+                                   item['feePercent'] ?? 
+                                   item['fee_percent'];
+              
+              if (camera is Map<String, dynamic>) {
+                itemFeePercent ??= camera['platformFeePercent'] ?? 
+                                  camera['platform_fee_percent'] ?? 
+                                  camera['feePercent'] ?? 
+                                  camera['fee_percent'];
+              }
+              
+              if (itemFeePercent != null) {
+                platformFeePercent = (itemFeePercent is num 
+                    ? itemFeePercent.toDouble() 
+                    : (itemFeePercent.toDouble() ?? 10.0));
+              }
+            }
+            
+            // Tính baseTotal cho item này
+            if (pricePerDay > 0) {
+              baseTotal += rentalDays * pricePerDay * quantity;
+            }
+          }
+        }
+        
+        if (baseTotal > 0) {
+          final platformFee = baseTotal * (platformFeePercent / 100);
+          final remainingAmount = baseTotal - platformFee;
+          
+          debugPrint('PaymentScreen: Calculated from items:');
+          debugPrint('  - baseTotal: $baseTotal');
+          debugPrint('  - platformFeePercent: $platformFeePercent');
+          debugPrint('  - platformFee (paymentAmount): $platformFee');
+          debugPrint('  - remainingAmount: $remainingAmount');
+          
           return {
-            'baseTotal': estimatedBaseTotal,
-            'platformFee': platformFee,
-            'platformFeePercent': platformFeePercent,
-            'paymentAmount': platformFee,
-            'remainingAmount': estimatedBaseTotal - platformFee,
+            'baseTotal': baseTotal.toDouble(),
+            'platformFee': platformFee.toDouble(),
+            'platformFeePercent': platformFeePercent.toDouble(),
+            'paymentAmount': platformFee.toDouble(),
+            'remainingAmount': remainingAmount.toDouble(),
           };
         }
+      }
+      
+      // Fallback cuối cùng: sử dụng snapshotBaseDailyRate
+      var snapshotBaseDailyRateRaw = widget.bookingData['snapshotBaseDailyRate'];
+      final snapshotBaseDailyRate = (snapshotBaseDailyRateRaw is num 
+          ? snapshotBaseDailyRateRaw.toDouble() 
+          : (snapshotBaseDailyRateRaw?.toDouble() ?? 0.0));
+      
+      if (snapshotBaseDailyRate > 0 && rentalDays > 0) {
+        final baseTotal = rentalDays * snapshotBaseDailyRate;
+        final platformFeePercent = snapshotPlatformFeePercent > 0 ? snapshotPlatformFeePercent : 10.0;
+        final platformFee = baseTotal * (platformFeePercent / 100);
+        final remainingAmount = baseTotal - platformFee;
+        
+        debugPrint('PaymentScreen: Calculated from snapshotBaseDailyRate:');
+        debugPrint('  - baseTotal: $baseTotal');
+        debugPrint('  - platformFee: $platformFee');
+        
         return {
-          'baseTotal': widget.totalAmount,
-          'platformFee': 0.0,
-          'platformFeePercent': platformFeePercent,
-          'paymentAmount': widget.totalAmount,
-          'remainingAmount': 0.0,
+          'baseTotal': baseTotal.toDouble(),
+          'platformFee': platformFee.toDouble(),
+          'platformFeePercent': platformFeePercent.toDouble(),
+          'paymentAmount': platformFee.toDouble(),
+          'remainingAmount': remainingAmount.toDouble(),
         };
       }
-
-      final baseTotal = rentalDays * finalBaseDailyRate; // Tổng giá thuê cơ bản
-      final platformFee = baseTotal * (platformFeePercent / 100); // Phí nền tảng = % của tổng giá thuê
-      final remainingAmount = baseTotal - platformFee; // Phần còn lại (thanh toán khi nhận thiết bị)
-
-      return {
-        'baseTotal': baseTotal.toDouble(),
-        'platformFee': platformFee.toDouble(),
-        'platformFeePercent': platformFeePercent.toDouble(), // Thêm phần trăm để hiển thị
-        'paymentAmount': platformFee.toDouble(), // Số tiền thanh toán = phí nền tảng
-        'remainingAmount': remainingAmount.toDouble(),
-      };
-    } catch (e) {
-      debugPrint('PaymentScreen: Error calculating: $e');
-      // Fallback: tính từ totalAmount với platformFeePercent mặc định 10%
-      // Giả sử totalAmount là baseTotal (tổng giá thuê) - đồng bộ với contract_signing_screen
-      final platformFeePercent = 10.0;
-      if (widget.totalAmount > 0) {
-        final estimatedBaseTotal = widget.totalAmount;
-        final platformFee = estimatedBaseTotal * (platformFeePercent / 100);
+      
+      // Fallback cuối cùng: sử dụng totalAmount
+      debugPrint('PaymentScreen: Using totalAmount as fallback');
+      final platformFeePercent = snapshotPlatformFeePercent > 0 ? snapshotPlatformFeePercent : 10.0;
+      if (widget.totalAmount > 0 && platformFeePercent > 0) {
+        final baseTotal = widget.totalAmount;
+        final platformFee = baseTotal * (platformFeePercent / 100);
         return {
-          'baseTotal': estimatedBaseTotal,
+          'baseTotal': baseTotal,
           'platformFee': platformFee,
           'platformFeePercent': platformFeePercent,
           'paymentAmount': platformFee,
-          'remainingAmount': estimatedBaseTotal - platformFee,
+          'remainingAmount': baseTotal - platformFee,
+        };
+      }
+      
+      return {
+        'baseTotal': widget.totalAmount,
+        'platformFee': 0.0,
+        'platformFeePercent': platformFeePercent,
+        'paymentAmount': widget.depositAmount > 0 ? widget.depositAmount : widget.totalAmount,
+        'remainingAmount': 0.0,
+      };
+    } catch (e, stackTrace) {
+      debugPrint('PaymentScreen: Error calculating payment details: $e');
+      debugPrint('PaymentScreen: StackTrace: $stackTrace');
+      // Fallback an toàn
+      final platformFeePercent = 10.0;
+      if (widget.totalAmount > 0) {
+        final baseTotal = widget.totalAmount;
+        final platformFee = baseTotal * (platformFeePercent / 100);
+        return {
+          'baseTotal': baseTotal,
+          'platformFee': platformFee,
+          'platformFeePercent': platformFeePercent,
+          'paymentAmount': platformFee,
+          'remainingAmount': baseTotal - platformFee,
         };
       }
       return {
         'baseTotal': 0.0,
         'platformFee': 0.0,
         'platformFeePercent': platformFeePercent,
-        'paymentAmount': widget.totalAmount,
+        'paymentAmount': widget.depositAmount > 0 ? widget.depositAmount : widget.totalAmount,
         'remainingAmount': 0.0,
       };
     }
@@ -1055,7 +1124,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Đặt lịch thành công',
+                            'Thông tin thanh toán',
                             style: TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
@@ -1162,7 +1231,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                         Expanded(
                                           child: Text(
                                             platformFeePercent > 0
-                                                ? 'Phí nền tảng (${platformFeePercent.toStringAsFixed(0)}%)'
+                                                ? 'Phí đặt cọc thuê (${platformFeePercent.toStringAsFixed(0)}%)'
                                                 : 'Phí nền tảng (số tiền thanh toán)',
                                             style: const TextStyle(
                                               fontSize: 16,

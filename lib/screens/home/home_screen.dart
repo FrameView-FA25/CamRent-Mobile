@@ -1,7 +1,6 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/camera_model.dart';
 import '../../models/accessory_model.dart';
@@ -11,8 +10,9 @@ import '../../widgets/camera_card.dart';
 import '../../main/main_screen.dart';
 import '../camera/camera_detail_screen.dart';
 import '../accessory/accessory_detail_screen.dart';
-import '../booking/booking_screen.dart';
 import '../booking/booking_list_screen.dart';
+import '../../checkout/checkout_screen.dart';
+import '../../models/booking_cart_item.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -32,6 +32,59 @@ class _HomeScreenState extends State<HomeScreen> {
   FilterType _selectedFilter = FilterType.all;
   final PageController _bannerPageController = PageController();
   int _currentBannerIndex = 0;
+  
+  // Date filter for available cameras
+  DateTime? _startDate;
+  DateTime? _endDate;
+  bool _isLoadingAvailableCameras = false;
+
+  Future<void> _loadAvailableCameras() async {
+    if (_startDate == null || _endDate == null) {
+      return;
+    }
+
+    setState(() {
+      _isLoadingAvailableCameras = true;
+    });
+
+    try {
+      final availableCamerasData = await ApiService.getAvailableCameras(
+        startDate: _startDate!,
+        endDate: _endDate!,
+      );
+
+      // Convert available cameras to ProductItem list
+      final availableProducts = <ProductItem>[];
+      for (final json in availableCamerasData) {
+        if (json is Map<String, dynamic>) {
+          final camera = CameraModel.fromJson(json);
+          if (camera.branchName.isNotEmpty) {
+            availableProducts.add(ProductItem.camera(camera));
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _products = availableProducts;
+          _isLoadingAvailableCameras = false;
+        });
+        _filterProducts();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingAvailableCameras = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Không thể tải danh sách camera khả dụng: ${e.toString().replaceFirst('Exception: ', '')}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
   Future<void> _loadProducts() async {
     setState(() {
@@ -43,10 +96,22 @@ class _HomeScreenState extends State<HomeScreen> {
       List<dynamic> accessoriesData = [];
       String? errorMessage;
 
-      try {
-        camerasData = await ApiService.getCameras();
-      } catch (e) {
-        errorMessage = 'Không thể tải danh sách máy ảnh: ${e.toString().replaceFirst('Exception: ', '')}';
+      // If date filter is active, use available cameras API
+      if (_startDate != null && _endDate != null) {
+        try {
+          camerasData = await ApiService.getAvailableCameras(
+            startDate: _startDate!,
+            endDate: _endDate!,
+          );
+        } catch (e) {
+          errorMessage = 'Không thể tải danh sách máy ảnh khả dụng: ${e.toString().replaceFirst('Exception: ', '')}';
+        }
+      } else {
+        try {
+          camerasData = await ApiService.getCameras();
+        } catch (e) {
+          errorMessage = 'Không thể tải danh sách máy ảnh: ${e.toString().replaceFirst('Exception: ', '')}';
+        }
       }
 
       try {
@@ -220,14 +285,39 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _handleAddToCart(ProductItem product) async {
     try {
       if (product.type == ProductType.camera) {
-        final added = await Navigator.push<bool>(
-          context,
-          MaterialPageRoute(
-            builder: (context) => BookingScreen(camera: product.camera!),
-          ),
-        );
-        if (added == true && mounted) {
-          _showAddToCartSnack(product.name, showCartAction: true);
+        // Thêm vào giỏ hàng trực tiếp (không cần form)
+        try {
+          final response = await ApiService.addCameraToCart(
+            cameraId: product.camera!.id,
+          );
+          
+          if (!mounted) return;
+          
+          // Check if item is already in cart
+          if (response['alreadyInCart'] == true) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('${product.name}\nĐã có trong giỏ hàng rồi'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+            // Vẫn navigate đến CheckoutScreen để xem giỏ hàng
+            await _navigateToCheckout();
+            return;
+          }
+          
+          // Reload cart và navigate đến CheckoutScreen
+          MainScreen.reloadCart();
+          await _navigateToCheckout();
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Không thể thêm vào giỏ hàng: ${e.toString().replaceFirst('Exception: ', '')}'),
+              backgroundColor: Colors.red,
+            ),
+          );
         }
         return;
       }
@@ -287,6 +377,68 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _navigateToCheckout() async {
+    try {
+      // Load cart items
+      final cartData = await ApiService.getBookingCart();
+      
+      // Extract items and totals
+      final items = <BookingCartItem>[];
+      final itemsData = cartData['items'] ?? 
+                       cartData['cartItems'] ?? 
+                       cartData['data']?['items'] ?? 
+                       [];
+      
+      if (itemsData is List) {
+        for (final itemData in itemsData) {
+          if (itemData is Map<String, dynamic>) {
+            try {
+              items.add(BookingCartItem.fromJson(itemData));
+            } catch (e) {
+              debugPrint('Error parsing cart item: $e');
+            }
+          }
+        }
+      }
+      
+      // Calculate totals
+      double totalAmount = 0;
+      double depositAmount = 0;
+      
+      for (final item in items) {
+        totalAmount += item.totalPrice;
+      }
+      
+      // Get deposit from response if available
+      depositAmount = (cartData['depositAmount'] ?? 
+                      cartData['deposit_amount'] ?? 
+                      cartData['totalDeposit'] ?? 
+                      0.0).toDouble();
+      
+      if (!mounted) return;
+      
+      // Navigate to CheckoutScreen
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CheckoutScreen(
+            cartItems: items,
+            totalAmount: totalAmount,
+            depositAmount: depositAmount,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Không thể tải giỏ hàng: ${e.toString().replaceFirst('Exception: ', '')}'),
           backgroundColor: Colors.red,
         ),
       );
@@ -755,6 +907,199 @@ class _HomeScreenState extends State<HomeScreen> {
                     filled: true,
                     fillColor: Colors.white,
                   ),
+                ),
+              ),
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 12)),
+          // Date filter section
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.calendar_today,
+                          size: 20,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Tìm camera khả dụng theo ngày',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: _startDate ?? DateTime.now(),
+                                firstDate: DateTime.now(),
+                                lastDate: DateTime.now().add(const Duration(days: 365)),
+                              );
+                              if (picked != null) {
+                                setState(() {
+                                  _startDate = picked;
+                                  if (_endDate != null && _endDate!.isBefore(_startDate!)) {
+                                    _endDate = null;
+                                  }
+                                });
+                                if (_startDate != null && _endDate != null) {
+                                  _loadProducts();
+                                }
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: _startDate != null 
+                                      ? Theme.of(context).colorScheme.primary 
+                                      : Colors.grey[300]!,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.event,
+                                    size: 20,
+                                    color: _startDate != null 
+                                        ? Theme.of(context).colorScheme.primary 
+                                        : Colors.grey[600],
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _startDate != null
+                                          ? '${_startDate!.day}/${_startDate!.month}/${_startDate!.year}'
+                                          : 'Chọn ngày bắt đầu',
+                                      style: TextStyle(
+                                        color: _startDate != null 
+                                            ? Colors.black 
+                                            : Colors.grey[600],
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: InkWell(
+                            onTap: () async {
+                              if (_startDate == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Vui lòng chọn ngày bắt đầu trước'),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                                return;
+                              }
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: _endDate ?? _startDate!.add(const Duration(days: 1)),
+                                firstDate: _startDate!,
+                                lastDate: DateTime.now().add(const Duration(days: 365)),
+                              );
+                              if (picked != null) {
+                                setState(() {
+                                  _endDate = picked;
+                                });
+                                _loadProducts();
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: _endDate != null 
+                                      ? Theme.of(context).colorScheme.primary 
+                                      : Colors.grey[300]!,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.event,
+                                    size: 20,
+                                    color: _endDate != null 
+                                        ? Theme.of(context).colorScheme.primary 
+                                        : Colors.grey[600],
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _endDate != null
+                                          ? '${_endDate!.day}/${_endDate!.month}/${_endDate!.year}'
+                                          : 'Chọn ngày kết thúc',
+                                      style: TextStyle(
+                                        color: _endDate != null 
+                                            ? Colors.black 
+                                            : Colors.grey[600],
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (_startDate != null || _endDate != null) ...[
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              setState(() {
+                                _startDate = null;
+                                _endDate = null;
+                              });
+                              _loadProducts();
+                            },
+                            tooltip: 'Xóa bộ lọc ngày',
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (_isLoadingAvailableCameras) ...[
+                      const SizedBox(height: 12),
+                      const Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),

@@ -566,6 +566,86 @@ class ApiService {
   }
 
   // Camera APIs
+  /// Get available cameras within a date range (with 7-day padding)
+  /// startDate and endDate are the user-selected dates
+  /// The API will receive startDate - 7 days and endDate + 7 days
+  static Future<List<dynamic>> getAvailableCameras({
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    try {
+      // Pad 7 days at the beginning and end
+      final paddedStartDate = startDate.subtract(const Duration(days: 7));
+      final paddedEndDate = endDate.add(const Duration(days: 7));
+      
+      // Format dates as ISO 8601 strings
+      final startDateStr = paddedStartDate.toUtc().toIso8601String();
+      final endDateStr = paddedEndDate.toUtc().toIso8601String();
+      
+      debugPrint('ApiService: getAvailableCameras - User dates: $startDate to $endDate');
+      debugPrint('ApiService: getAvailableCameras - Padded dates: $paddedStartDate to $paddedEndDate');
+      debugPrint('ApiService: getAvailableCameras - API dates: $startDateStr to $endDateStr');
+      
+      final uri = Uri.parse('$baseUrl/Cameras/available').replace(queryParameters: {
+        'start': startDateStr,
+        'end': endDateStr,
+      });
+      
+      final response = await http.get(
+        uri,
+        headers: await _getHeaders(includeContentType: false),
+      );
+
+      // Check status code before processing
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        debugPrint('Available Cameras API Response Status: ${response.statusCode}');
+        
+        List<dynamic> extractList(dynamic source) {
+          if (source is List) {
+            return source;
+          }
+          if (source is Map<String, dynamic>) {
+            const keys = ['items', 'cameras', 'data', 'results', 'value', 'content'];
+            for (final key in keys) {
+              if (!source.containsKey(key)) continue;
+              final value = source[key];
+              final result = extractList(value);
+              if (result.isNotEmpty || identical(result, value)) {
+                return result;
+              }
+            }
+          }
+          return const [];
+        }
+
+        try {
+          final decoded = jsonDecode(response.body);
+          List<dynamic> list;
+          if (decoded is List) {
+            list = decoded;
+          } else if (decoded is Map<String, dynamic>) {
+            list = extractList(decoded);
+          } else {
+            debugPrint('Unexpected response format: ${decoded.runtimeType}');
+            return [];
+          }
+          
+          debugPrint('ApiService: getAvailableCameras - Found ${list.length} available cameras');
+          return list;
+        } catch (e) {
+          debugPrint('ApiService: getAvailableCameras - Error parsing response: $e');
+          throw Exception('Không thể xử lý phản hồi từ server: ${e.toString()}');
+        }
+      } else {
+        final errorMsg = _extractErrorMessage(response.body);
+        throw Exception(errorMsg ?? 'Lỗi khi tải danh sách camera khả dụng: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('ApiService: getAvailableCameras - Error: $e');
+      throw Exception('Không thể tải danh sách camera khả dụng: ${e.toString().replaceFirst('Exception: ', '')}');
+    }
+  }
+
   static Future<List<dynamic>> getCameras() async {
     try {
       // Add pagination parameters to get all items
@@ -1302,7 +1382,7 @@ class ApiService {
       };
       
       // Add cartId to request body if available (some backends may need it)
-      if (cartId != null && cartId.isNotEmpty) {
+      if (cartId.isNotEmpty) {
         requestBody['cartId'] = cartId;
       }
 
@@ -1313,7 +1393,7 @@ class ApiService {
       
       // Build URL with cartId as query parameter if available
       Uri bookingUrl = Uri.parse('$baseUrl/Bookings');
-      if (cartId != null && cartId.isNotEmpty) {
+      if (cartId.isNotEmpty) {
         bookingUrl = bookingUrl.replace(queryParameters: {'cartId': cartId});
         debugPrint('createBookingFromCart: Added cartId to query parameter: $cartId');
       }
@@ -1390,7 +1470,7 @@ class ApiService {
         // Log contracts array if present
         if (bookingData.containsKey('contracts')) {
           final contracts = bookingData['contracts'];
-          debugPrint('createBookingFromCart: Contracts found: ${contracts is List ? (contracts as List).length : "not a list"}');
+          debugPrint('createBookingFromCart: Contracts found: ${contracts is List ? (contracts).length : "not a list"}');
           if (contracts is List) {
             debugPrint('createBookingFromCart: Contracts array: $contracts');
           }
@@ -1500,7 +1580,7 @@ class ApiService {
       
       // Ensure bookingId is in bookingData
       final result = Map<String, dynamic>.from(bookingData);
-      if (bookingId != null && bookingId.isNotEmpty) {
+      if (bookingId.isNotEmpty) {
         result['id'] = bookingId;
         result['bookingId'] = bookingId;
         debugPrint('createBookingFromCart: Final bookingId: $bookingId');
@@ -1510,7 +1590,7 @@ class ApiService {
       
       // Step 2: Create payment authorization if requested
       if (createPayment) {
-        if (bookingId != null && bookingId.isNotEmpty) {
+        if (bookingId.isNotEmpty) {
           try {
             debugPrint('createBookingFromCart: Creating payment authorization for bookingId: $bookingId');
             
@@ -2661,6 +2741,124 @@ class ApiService {
   // Legacy method name for backward compatibility
   static Future<List<Map<String, dynamic>>> getCameraBookings(String cameraId) async {
     return getItemBookings(cameraId);
+  }
+
+  /// Lấy danh sách các khoảng thời gian không khả dụng (đã được booking) của một item
+  /// 
+  /// Endpoint: GET /api/Bookings/items/{itemId}/unavailable-ranges?type={type}
+  /// 
+  /// Parameters:
+  ///   - itemId: ID của item (camera, accessory, hoặc combo)
+  ///   - type: Loại item (BookingItemType.camera = 1, accessory = 2, combo = 3)
+  /// 
+  /// Returns: List<Map<String, dynamic>> với mỗi item chứa:
+  ///   - startDate: DateTime bắt đầu
+  ///   - endDate: DateTime kết thúc
+  static Future<List<Map<String, dynamic>>> getUnavailableRanges(
+    String itemId,
+    BookingItemType type,
+  ) async {
+    try {
+      final uri = Uri.parse('$baseUrl/Bookings/items/$itemId/unavailable-ranges')
+          .replace(queryParameters: {
+        'type': type.value.toString(),
+      });
+      
+      debugPrint('getUnavailableRanges: Calling endpoint: $uri');
+      debugPrint('getUnavailableRanges: itemId=$itemId, type=${type.value}');
+
+      final response = await http.get(
+        uri,
+        headers: await _getHeaders(requiresAuth: true, includeContentType: false),
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          debugPrint('getUnavailableRanges: Request timeout');
+          throw Exception('Kết nối quá lâu. Vui lòng thử lại');
+        },
+      );
+
+      final statusCode = response.statusCode;
+      final body = response.body;
+
+      debugPrint('getUnavailableRanges: Response status: $statusCode');
+
+      // Handle authentication errors gracefully
+      if (statusCode == 401) {
+        debugPrint('getUnavailableRanges: 401 Unauthorized - user may not be logged in');
+        return [];
+      }
+
+      if (statusCode == 404) {
+        debugPrint('getUnavailableRanges: 404 Not Found - item may not exist');
+        return [];
+      }
+
+      if (statusCode >= 200 && statusCode < 300) {
+        if (body.isEmpty) {
+          debugPrint('getUnavailableRanges: Empty response body');
+          return [];
+        }
+        try {
+          final decoded = jsonDecode(body);
+          debugPrint('getUnavailableRanges: Decoded type: ${decoded.runtimeType}');
+          
+          // Handle different response formats
+          List<dynamic> rangesList;
+          if (decoded is List) {
+            rangesList = decoded;
+          } else if (decoded is Map<String, dynamic>) {
+            // Try common keys
+            const keys = ['items', 'ranges', 'unavailableRanges', 'data', 'results', 'value'];
+            rangesList = [];
+            for (final key in keys) {
+              if (decoded.containsKey(key) && decoded[key] is List) {
+                rangesList = decoded[key] as List;
+                break;
+              }
+            }
+            if (rangesList.isEmpty) {
+              debugPrint('getUnavailableRanges: No list found in response map');
+              return [];
+            }
+          } else {
+            debugPrint('getUnavailableRanges: Unexpected response type');
+            return [];
+          }
+
+          // Convert to List<Map<String, dynamic>>
+          final result = <Map<String, dynamic>>[];
+          for (final item in rangesList) {
+            if (item is Map<String, dynamic>) {
+              result.add(item);
+            }
+          }
+
+          debugPrint('getUnavailableRanges: Found ${result.length} unavailable ranges');
+          return result;
+        } catch (e) {
+          debugPrint('getUnavailableRanges: JSON decode error: $e');
+          debugPrint('getUnavailableRanges: Response body: ${body.length > 500 ? "${body.substring(0, 500)}..." : body}');
+          return [];
+        }
+      }
+
+      final errorMsg = _extractErrorMessage(body);
+      debugPrint('getUnavailableRanges: Error $statusCode - $errorMsg');
+      
+      // For errors, return empty list instead of throwing (to not break UI)
+      if (statusCode >= 500) {
+        debugPrint('getUnavailableRanges: Server error, returning empty list');
+        return [];
+      }
+      
+      // For client errors, also return empty list
+      return [];
+    } catch (e) {
+      debugPrint('getUnavailableRanges: Exception - ${e.toString()}');
+      // Return empty list instead of throwing to not break UI
+      return [];
+    }
   }
 
   static Future<Map<String, dynamic>> getBookingById(String id) async {

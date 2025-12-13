@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../models/booking_cart_item.dart';
 import '../services/api_service.dart';
 import '../screens/contract/contract_signing_screen.dart';
 import '../screens/payment/payment_screen.dart';
+import '../utils/vietnam_provinces.dart';
 
 // Validation result class
 class _ValidationResult {
@@ -46,19 +48,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final _notesController = TextEditingController();
   DateTime? _pickupDate;
   DateTime? _returnDate;
-  static const List<String> _provinceOptions = [
-    'Hà Nội',
-    'Hồ Chí Minh',
-    'Đà Nẵng',
-    'Hải Phòng',
-    'Cần Thơ',
-    'Đắk Lắk',
-    'Bình Dương',
-    'Khánh Hòa',
-    'Thanh Hóa',
-    'Nghệ An',
-  ];
-  String _selectedProvince = _provinceOptions.first;
+  String? _selectedProvince;
   bool _isSubmitting = false;
   bool _isLoadingProfile = true;
   String? _dateConflictMessage;
@@ -189,7 +179,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Future<void> _selectDate({required bool isPickup}) async {
     try {
       // Normalize dates to start of day for consistent comparison
-      final normalizeDate = (DateTime date) => DateTime(date.year, date.month, date.day);
+      normalizeDate(DateTime date) => DateTime(date.year, date.month, date.day);
       
       final now = normalizeDate(DateTime.now());
       final lastDate = normalizeDate(DateTime.now().add(const Duration(days: 365)));
@@ -451,6 +441,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           }
         }
         
+        // Xử lý tỉnh/thành từ profile
+        final province = profileData['province'] ?? 
+                        profileData['city'] ?? 
+                        profileData['provinceName'] ??
+                        profileData['cityName'];
+        if (province != null && province is String) {
+          // Tìm trong danh sách 34 tỉnh thành
+          final foundProvince = VietnamProvinces.provinces.firstWhere(
+            (p) => p.toLowerCase().contains(province.toLowerCase()) ||
+                   province.toLowerCase().contains(p.toLowerCase()),
+            orElse: () => province,
+          );
+          if (VietnamProvinces.provinces.contains(foundProvince)) {
+            _selectedProvince = foundProvince;
+          }
+        }
+        
         _isLoadingProfile = false;
       });
     } catch (e) {
@@ -620,6 +627,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
+    if (_selectedProvince == null || _selectedProvince!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vui lòng chọn tỉnh/thành phố'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     // Validate booking dates against existing bookings
     setState(() {
       _isSubmitting = true;
@@ -655,7 +672,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         customerName: _nameController.text.trim(),
         customerPhone: _phoneController.text.trim(),
         customerEmail: _emailController.text.trim(),
-        province: _selectedProvince,
+        province: _selectedProvince ?? VietnamProvinces.provinces.first,
         district: _addressController.text.trim(),
         pickupAt: _pickupDate!,
         returnAt: _returnDate!,
@@ -1181,118 +1198,392 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Thông tin khách hàng
+                              // Thông tin khách hàng - Modern UI
                               Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.person_outline,
-                                    color: Theme.of(context).colorScheme.primary,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Text(
-                                    'Thông tin khách hàng',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.08),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 8),
+                                      spreadRadius: 0,
                                     ),
+                                  ],
+                                  border: Border.all(
+                                    color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                                    width: 1,
                                   ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              TextFormField(
-                                controller: _nameController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Họ và tên *',
-                                  border: OutlineInputBorder(),
-                                  prefixIcon: Icon(Icons.person),
                                 ),
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'Vui lòng nhập họ và tên';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: _phoneController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Số điện thoại *',
-                                  border: OutlineInputBorder(),
-                                  prefixIcon: Icon(Icons.phone),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Header với icon và gradient
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                                            Theme.of(context).colorScheme.primary.withOpacity(0.05),
+                                          ],
+                                        ),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(10),
+                                            decoration: BoxDecoration(
+                                              color: Theme.of(context).colorScheme.primary.withOpacity(0.15),
+                                              borderRadius: BorderRadius.circular(10),
+                                            ),
+                                            child: Icon(
+                                              Icons.person_outline_rounded,
+                                              color: Theme.of(context).colorScheme.primary,
+                                              size: 24,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Text(
+                                            'Renter Information',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    // Name field
+                                    TextFormField(
+                                      controller: _nameController,
+                                      style: GoogleFonts.inter(),
+                                      decoration: InputDecoration(
+                                        labelText: 'Họ và tên *',
+                                        labelStyle: GoogleFonts.inter(
+                                          color: Colors.grey[600],
+                                        ),
+                                        prefixIcon: Icon(
+                                          Icons.person_outline_rounded,
+                                          color: Theme.of(context).colorScheme.primary,
+                                        ),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Theme.of(context).colorScheme.primary,
+                                            width: 2,
+                                          ),
+                                        ),
+                                        filled: true,
+                                        fillColor: Colors.grey[50],
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                      ),
+                                      validator: (value) {
+                                        if (value == null || value.trim().isEmpty) {
+                                          return 'Vui lòng nhập họ và tên';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    const SizedBox(height: 16),
+                                    // Phone field
+                                    TextFormField(
+                                      controller: _phoneController,
+                                      style: GoogleFonts.inter(),
+                                      decoration: InputDecoration(
+                                        labelText: 'Số điện thoại *',
+                                        labelStyle: GoogleFonts.inter(
+                                          color: Colors.grey[600],
+                                        ),
+                                        prefixIcon: Icon(
+                                          Icons.phone_outlined,
+                                          color: Theme.of(context).colorScheme.primary,
+                                        ),
+                                        hintText: '0901234567',
+                                        hintStyle: GoogleFonts.inter(
+                                          color: Colors.grey[400],
+                                        ),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Theme.of(context).colorScheme.primary,
+                                            width: 2,
+                                          ),
+                                        ),
+                                        filled: true,
+                                        fillColor: Colors.grey[50],
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                      ),
+                                      keyboardType: TextInputType.phone,
+                                      validator: (value) {
+                                        if (value == null || value.trim().isEmpty) {
+                                          return 'Vui lòng nhập số điện thoại';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    const SizedBox(height: 16),
+                                    // Email field
+                                    TextFormField(
+                                      controller: _emailController,
+                                      style: GoogleFonts.inter(),
+                                      decoration: InputDecoration(
+                                        labelText: 'Email *',
+                                        labelStyle: GoogleFonts.inter(
+                                          color: Colors.grey[600],
+                                        ),
+                                        prefixIcon: Icon(
+                                          Icons.email_outlined,
+                                          color: Theme.of(context).colorScheme.primary,
+                                        ),
+                                        hintText: 'example@email.com',
+                                        hintStyle: GoogleFonts.inter(
+                                          color: Colors.grey[400],
+                                        ),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Theme.of(context).colorScheme.primary,
+                                            width: 2,
+                                          ),
+                                        ),
+                                        filled: true,
+                                        fillColor: Colors.grey[50],
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                      ),
+                                      keyboardType: TextInputType.emailAddress,
+                                      validator: (value) {
+                                        if (value == null || value.trim().isEmpty) {
+                                          return 'Vui lòng nhập email';
+                                        }
+                                        if (!value.contains('@')) {
+                                          return 'Email không hợp lệ';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    const SizedBox(height: 16),
+                                    // Address field
+                                    TextFormField(
+                                      controller: _addressController,
+                                      style: GoogleFonts.inter(),
+                                      decoration: InputDecoration(
+                                        labelText: 'Địa chỉ (quận/huyện) *',
+                                        labelStyle: GoogleFonts.inter(
+                                          color: Colors.grey[600],
+                                        ),
+                                        prefixIcon: Icon(
+                                          Icons.location_on_outlined,
+                                          color: Theme.of(context).colorScheme.primary,
+                                        ),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Theme.of(context).colorScheme.primary,
+                                            width: 2,
+                                          ),
+                                        ),
+                                        filled: true,
+                                        fillColor: Colors.grey[50],
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                      ),
+                                      maxLines: 2,
+                                      validator: (value) {
+                                        if (value == null || value.trim().isEmpty) {
+                                          return 'Vui lòng nhập địa chỉ';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    const SizedBox(height: 16),
+                                    // Province dropdown - Optimized for large list
+                                    DropdownButtonFormField<String>(
+                                      value: _selectedProvince,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 15,
+                                        color: Colors.black87,
+                                      ),
+                                      decoration: InputDecoration(
+                                        labelText: 'Tỉnh/Thành phố *',
+                                        hintText: 'Chọn tỉnh/thành phố',
+                                        hintStyle: GoogleFonts.inter(
+                                          color: Colors.grey[400],
+                                          fontSize: 15,
+                                        ),
+                                        labelStyle: GoogleFonts.inter(
+                                          color: Colors.grey[600],
+                                          fontSize: 14,
+                                        ),
+                                        prefixIcon: Icon(
+                                          Icons.location_city_outlined,
+                                          color: Theme.of(context).colorScheme.primary,
+                                          size: 22,
+                                        ),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Theme.of(context).colorScheme.primary,
+                                            width: 2,
+                                          ),
+                                        ),
+                                        filled: true,
+                                        fillColor: Colors.grey[50],
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                      ),
+                                      menuMaxHeight: 350, // Limit dropdown height
+                                      isExpanded: true, // Allow text to expand
+                                      isDense: false,
+                                      iconSize: 24,
+                                      selectedItemBuilder: (BuildContext context) {
+                                        return VietnamProvinces.provinces.map<Widget>((String province) {
+                                          return Text(
+                                            province,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 15,
+                                              color: Colors.black87,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          );
+                                        }).toList();
+                                      },
+                                      items: VietnamProvinces.provinces.map((province) {
+                                        return DropdownMenuItem<String>(
+                                          value: province,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(vertical: 4),
+                                            child: Text(
+                                              province,
+                                              style: GoogleFonts.inter(
+                                                fontSize: 14,
+                                                color: Colors.black87,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 1,
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                      onChanged: (value) {
+                                        if (value != null) {
+                                          setState(() {
+                                            _selectedProvince = value;
+                                          });
+                                        }
+                                      },
+                                      validator: (value) {
+                                        if (value == null || value.isEmpty) {
+                                          return 'Vui lòng chọn tỉnh/thành phố';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    const SizedBox(height: 16),
+                                    // Notes field
+                                    TextFormField(
+                                      controller: _notesController,
+                                      style: GoogleFonts.inter(),
+                                      decoration: InputDecoration(
+                                        labelText: 'Ghi chú',
+                                        labelStyle: GoogleFonts.inter(
+                                          color: Colors.grey[600],
+                                        ),
+                                        prefixIcon: Icon(
+                                          Icons.note_outlined,
+                                          color: Theme.of(context).colorScheme.primary,
+                                        ),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: Theme.of(context).colorScheme.primary,
+                                            width: 2,
+                                          ),
+                                        ),
+                                        filled: true,
+                                        fillColor: Colors.grey[50],
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                      ),
+                                      maxLines: 3,
+                                    ),
+                                  ],
                                 ),
-                                keyboardType: TextInputType.phone,
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'Vui lòng nhập số điện thoại';
-                                  }
-                                  return null;
-                                },
                               ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: _emailController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Email *',
-                                  border: OutlineInputBorder(),
-                                  prefixIcon: Icon(Icons.email),
-                                ),
-                                keyboardType: TextInputType.emailAddress,
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'Vui lòng nhập email';
-                                  }
-                                  if (!value.contains('@')) {
-                                    return 'Email không hợp lệ';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: _addressController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Địa chỉ (quận/huyện) *',
-                                  border: OutlineInputBorder(),
-                                  prefixIcon: Icon(Icons.location_on),
-                                ),
-                                maxLines: 2,
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'Vui lòng nhập địa chỉ';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: _notesController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Ghi chú',
-                                  border: OutlineInputBorder(),
-                                  prefixIcon: Icon(Icons.note),
-                                ),
-                                maxLines: 3,
-                              ),
-                            ],
-                          ),
-                        ),
                         const SizedBox(height: 16),
                         Text(
                           'Ngày thuê',
@@ -1353,38 +1644,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             ],
                           ),
                         ],
-                        const SizedBox(height: 16),
-                        Text(
-                          'Tỉnh/Thành *',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          value: _selectedProvince,
-                          decoration: const InputDecoration(
-                            border: OutlineInputBorder(),
-                            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          ),
-                          items: _provinceOptions
-                              .map(
-                                (province) => DropdownMenuItem(
-                                  value: province,
-                                  child: Text(province),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() {
-                                _selectedProvince = value;
-                              });
-                            }
-                          },
-                        ),
                         const SizedBox(height: 16),
                         // Danh sách sản phẩm
                         Container(
@@ -1545,7 +1804,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                           children: [
                                             Text(
                                               platformFeePercent > 0
-                                                  ? 'Phí nền tảng (${platformFeePercent.toStringAsFixed(0)}%)'
+                                                  ? 'Phí cọc đặt lịch (${platformFeePercent.toStringAsFixed(0)}%)'
                                                   : 'Phí nền tảng (số tiền thanh toán)',
                                               style: TextStyle(
                                                 fontSize: 14,

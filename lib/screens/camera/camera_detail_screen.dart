@@ -1,7 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../models/camera_model.dart';
-import '../booking/booking_screen.dart';
-import '../booking/booking_list_screen.dart';
 
 class CameraDetailScreen extends StatelessWidget {
   final CameraModel camera;
@@ -46,6 +45,36 @@ class CameraDetailScreen extends StatelessWidget {
     final cameraDescription = camera.description.isNotEmpty 
         ? camera.description 
         : 'Máy ảnh chất lượng cao';
+    
+    // Parse specs from JSON
+    Map<String, dynamic>? specsMap;
+    String specsDisplay = 'Đang cập nhật';
+    if (camera.specsJson != null && camera.specsJson!.isNotEmpty) {
+      try {
+        // Try to parse as JSON (may have escaped quotes)
+        String cleanedSpecs = camera.specsJson!;
+        // Remove escape characters if present
+        cleanedSpecs = cleanedSpecs.replaceAll('\\"', '"').replaceAll('\\\\', '\\');
+        specsMap = jsonDecode(cleanedSpecs) as Map<String, dynamic>?;
+        if (specsMap != null && specsMap.isNotEmpty) {
+          final specsList = specsMap.entries.map((e) => '${e.key}: ${e.value}').toList();
+          specsDisplay = specsList.join('\n');
+        } else {
+          // If not JSON, use as plain text
+          specsDisplay = cleanedSpecs;
+        }
+      } catch (e) {
+        // If parsing fails, use as plain text
+        specsDisplay = camera.specsJson!;
+      }
+    }
+    
+    // Format other fields
+    final modelCode = camera.modelCode.isNotEmpty ? camera.modelCode : 'Đang cập nhật';
+    final variant = (camera.variant != null && camera.variant!.isNotEmpty) 
+        ? camera.variant! 
+        : 'Đang cập nhật';
+    final cameraId = camera.id.isNotEmpty ? camera.id : 'Đang cập nhật';
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -75,17 +104,20 @@ class CameraDetailScreen extends StatelessWidget {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                const Color(0xFFFF6600), // FPT Orange - Cam
-                const Color(0xFF00A651), // FPT Green - Xanh lá
-                const Color(0xFF0066CC), // FPT Blue - Xanh dương
+                const Color(0xFFFF6600).withOpacity(0.25), // Cam - chủ đạo
+                const Color(0xFFFF6600).withOpacity(0.2), // Cam - tiếp tục
+                const Color(0xFF00A651).withOpacity(0.15), // Xanh lá - nhẹ
+                const Color(0xFF0066CC).withOpacity(0.1), // Xanh dương - rất nhẹ
               ],
               stops: const [0.0, 0.4, 0.7, 1.0],
             ),
           ),
           child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
               // Image với hero animation
               Hero(
                 tag: 'product_${camera.id}',
@@ -204,6 +236,7 @@ class CameraDetailScreen extends StatelessWidget {
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     // Brand Badge
                     Container(
@@ -344,6 +377,27 @@ class CameraDetailScreen extends StatelessWidget {
                     const SizedBox(height: 12),
                     _buildInfoTile(
                       context,
+                      icon: Icons.info_outline,
+                      title: 'Mã máy ảnh',
+                      value: cameraId,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildInfoTile(
+                      context,
+                      icon: Icons.camera_alt,
+                      title: 'Model',
+                      value: modelCode,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildInfoTile(
+                      context,
+                      icon: Icons.category,
+                      title: 'Phiên bản',
+                      value: variant,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildInfoTile(
+                      context,
                       icon: Icons.location_on,
                       title: 'Chi nhánh',
                       value: branchDisplay,
@@ -384,6 +438,67 @@ class CameraDetailScreen extends StatelessWidget {
                       title: 'Phí nền tảng',
                       value: platformFeeText,
                     ),
+                    if (specsDisplay != 'Đang cập nhật') ...[
+                      const SizedBox(height: 24),
+                      const Text(
+                        'Thông số kỹ thuật',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.primary.withOpacity(0.08),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: specsDisplay.split('\n').map((spec) {
+                            if (spec.trim().isEmpty) return const SizedBox.shrink();
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    width: 6,
+                                    height: 6,
+                                    margin: const EdgeInsets.only(top: 6, right: 12),
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context).colorScheme.primary,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      spec.trim(),
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        color: Colors.grey[700],
+                                        height: 1.5,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 24),
                     const Text(
                       'Mô tả',
@@ -400,8 +515,6 @@ class CameraDetailScreen extends StatelessWidget {
                         color: Colors.grey[700],
                         height: 1.5,
                       ),
-                      maxLines: 20,
-                      overflow: TextOverflow.ellipsis,
                     ),
                     if (camera.features.isNotEmpty) ...[
                       const SizedBox(height: 24),
@@ -428,59 +541,9 @@ class CameraDetailScreen extends StatelessWidget {
                   ],
                 ),
               ),
+                // Add bottom padding
+                SizedBox(height: MediaQuery.of(context).padding.bottom + 20),
             ],
-          ),
-        ),
-        ),
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: SizedBox(
-            height: 50,
-            child: ElevatedButton(
-              onPressed: () async {
-                final added = await Navigator.push<bool>(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => BookingScreen(camera: camera),
-                  ),
-                );
-                if (added == true && context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Đã thêm $cameraName vào giỏ hàng',
-                      ),
-                      action: SnackBarAction(
-                        label: 'Xem giỏ',
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder:
-                                  (context) => const BookingListScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  );
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text(
-                'Đặt lịch thuê',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
             ),
           ),
         ),

@@ -121,20 +121,12 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         DateTime? bDate = b.createdAt;
         
         // If createdAt is null, use pickupAt
-        if (aDate == null) {
-          aDate = a.pickupAt;
-        }
-        if (bDate == null) {
-          bDate = b.pickupAt;
-        }
+        aDate ??= a.pickupAt;
+        bDate ??= b.pickupAt;
         
         // If still null, use returnAt
-        if (aDate == null) {
-          aDate = a.returnAt;
-        }
-        if (bDate == null) {
-          bDate = b.returnAt;
-        }
+        aDate ??= a.returnAt;
+        bDate ??= b.returnAt;
         
         // Default to now if still null
         final aTs = aDate ?? DateTime.now();
