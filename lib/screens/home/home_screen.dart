@@ -285,7 +285,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _handleAddToCart(ProductItem product) async {
     try {
       if (product.type == ProductType.camera) {
-        // Thêm vào giỏ hàng trực tiếp (không cần form)
+        // Thêm vào giỏ hàng trực tiếp (không chuyển sang màn hình đặt lịch)
         try {
           final response = await ApiService.addCameraToCart(
             cameraId: product.camera!.id,
@@ -295,21 +295,19 @@ class _HomeScreenState extends State<HomeScreen> {
           
           // Check if item is already in cart
           if (response['alreadyInCart'] == true) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('${product.name}\nĐã có trong giỏ hàng rồi'),
-                backgroundColor: Colors.orange,
-                duration: const Duration(seconds: 2),
-              ),
+            _showAddToCartSnack(
+              product.name,
+              cartId: null,
+              isAlreadyInCart: true,
             );
-            // Vẫn navigate đến CheckoutScreen để xem giỏ hàng
-            await _navigateToCheckout();
+            // Reload cart để hiển thị item đã tồn tại
+            MainScreen.reloadCart();
             return;
           }
           
-          // Reload cart và navigate đến CheckoutScreen
+          // Reload cart sau khi thêm thành công, không navigate
           MainScreen.reloadCart();
-          await _navigateToCheckout();
+          _showAddToCartSnack(product.name);
         } catch (e) {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(

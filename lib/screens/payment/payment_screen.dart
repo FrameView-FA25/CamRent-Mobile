@@ -267,7 +267,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           'baseTotal': baseTotal,
           'platformFee': platformFee,
           'platformFeePercent': platformFeePercent,
-          'paymentAmount': platformFee, // Số tiền thanh toán = phí đặt cọc thuêthuê
+          'paymentAmount': platformFee, // Số tiền thanh toán = phí đặt cọc thuê
           'remainingAmount': remainingAmount,
         };
       }
@@ -1232,7 +1232,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                           child: Text(
                                             platformFeePercent > 0
                                                 ? 'Phí đặt cọc thuê (${platformFeePercent.toStringAsFixed(0)}%)'
-                                                : 'Phí nền tảng (số tiền thanh toán)',
+                                                : 'Phí đặt cọc thuê (số tiền thanh toán)',
                                             style: const TextStyle(
                                               fontSize: 16,
                                               fontWeight: FontWeight.bold,
