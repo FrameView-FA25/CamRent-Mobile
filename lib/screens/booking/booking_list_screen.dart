@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../models/booking_cart_item.dart';
+import 'booking_cart_item.dart';
 import '../../models/camera_model.dart';
 import '../../services/api_service.dart';
 import '../camera/camera_detail_screen.dart';

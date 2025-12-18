@@ -852,10 +852,8 @@ class SignaturePadState extends State<SignaturePad> {
       throw Exception('Invalid signature bounds');
     }
 
-    // Tối ưu kích thước chữ ký để rõ ràng và không quá lớn
-    // Kích thước phù hợp: 80-120px chiều cao để đảm bảo chất lượng khi hiển thị
-    const maxHeight = 50.0; // Tăng lên 100px để chữ ký rõ ràng hơn
-    const maxWidth = 10100.0; // Tăng lên 200px để tỷ lệ phù hợp
+    const maxHeight = 880.0; // Tăng lên 100px để chữ ký rõ ràng hơn
+    const maxWidth = 1220.0; // Tăng lên 200px để tỷ lệ phù hợp
     
     // Calculate scale to maintain aspect ratio
     final widthScale = maxWidth / (signatureWidth + padding * 2);

@@ -4,6 +4,7 @@ import '../../services/api_service.dart';
 import '../../main/main_screen.dart';
 import '../../profile/register_screen.dart';
 import '../staff/staff_main_screen.dart';
+import '../branch/branch_selection_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -60,10 +61,10 @@ class _LoginScreenState extends State<LoginScreen> {
               MaterialPageRoute(builder: (context) => const StaffMainScreen()),
             );
           } else {
-            // Renter or other roles - go to regular MainScreen
-            debugPrint('LoginScreen: Navigating to MainScreen (role: $userRole)');
+            // Renter or other roles - navigate to BranchSelectionScreen first
+            debugPrint('LoginScreen: Navigating to BranchSelectionScreen (role: $userRole)');
             Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (context) => const MainScreen()),
+              MaterialPageRoute(builder: (context) => const BranchSelectionScreen()),
             );
           }
         }
@@ -172,8 +173,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             color: Colors.transparent,
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                              color: Colors.white.withOpacity(0.7),
-                              width: 1.5,
+                              color: Colors.black,
+                              width: 1,
                             ),
                           ),
                           child: Column(
@@ -182,7 +183,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               // Main title with elegant serif font and black stroke
                               Stack(
                                 children: [
-                                  // Black stroke/outline - thicker for better visibility
+                                  // Black stroke/outline - thin
                                   Text(
                                     'CAMERA FOR RENT',
                                     textAlign: TextAlign.center,
@@ -191,20 +192,20 @@ class _LoginScreenState extends State<LoginScreen> {
                                       fontWeight: FontWeight.w700,
                                       foreground: Paint()
                                         ..style = PaintingStyle.stroke
-                                        ..strokeWidth = 5
+                                        ..strokeWidth = 1
                                         ..color = Colors.black,
                                       letterSpacing: 3.0,
                                       height: 1.2,
                                     ),
                                   ),
-                                  // White fill text on top
+                                  // Light orange fill text on top
                                   Text(
                                     'CAMERA FOR RENT',
                                     textAlign: TextAlign.center,
                                     style: GoogleFonts.cinzel(
                                       fontSize: 36,
                                       fontWeight: FontWeight.w700,
-                                      color: Colors.white,
+                                      color: const Color(0xFFFFB366), // Màu cam nhạt
                                       letterSpacing: 3.0,
                                       height: 1.2,
                                     ),
@@ -219,9 +220,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                 decoration: BoxDecoration(
                                   gradient: LinearGradient(
                                     colors: [
-                                      Colors.white.withOpacity(0.8),
-                                      Colors.white.withOpacity(0.3),
-                                      Colors.white.withOpacity(0.8),
+                                      const Color(0xFFFFB366).withOpacity(0.8),
+                                      const Color(0xFFFFB366).withOpacity(0.3),
+                                      const Color(0xFFFFB366).withOpacity(0.8),
                                     ],
                                   ),
                                 ),

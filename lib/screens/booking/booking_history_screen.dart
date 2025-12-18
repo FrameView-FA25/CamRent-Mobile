@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../models/booking_model.dart';
+import 'booking_model.dart';
 import '../../services/api_service.dart';
 import 'booking_detail_screen.dart';
 
@@ -14,6 +14,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   bool _isLoading = true;
   String? _error;
   List<BookingModel> _bookings = [];
+  Map<String, bool> _processingBookings = {}; // Track which bookings are being processed
 
   @override
   void initState() {
@@ -43,6 +44,22 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       );
       debugPrint('BookingHistoryScreen: Received ${data.length} items from API');
       debugPrint('BookingHistoryScreen: Data type: ${data.runtimeType}');
+      
+      // Log all booking IDs and dates for debugging
+      if (data.isNotEmpty) {
+        debugPrint('BookingHistoryScreen: === DEBUG: All bookings from API ===');
+        for (int i = 0; i < data.length; i++) {
+          final item = data[i];
+          if (item is Map<String, dynamic>) {
+            final id = item['id']?.toString() ?? item['_id']?.toString() ?? 'N/A';
+            final createdAt = item['createdAt']?.toString() ?? 'N/A';
+            final pickupAt = item['pickupAt']?.toString() ?? 'N/A';
+            final status = item['status']?.toString() ?? 'N/A';
+            debugPrint('BookingHistoryScreen: Booking $i - ID: $id, Status: $status, CreatedAt: $createdAt, PickupAt: $pickupAt');
+          }
+        }
+        debugPrint('BookingHistoryScreen: === END DEBUG ===');
+      }
       
       if (data.isEmpty) {
         debugPrint('BookingHistoryScreen: No bookings returned from API');
@@ -137,7 +154,16 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       });
 
       if (mounted) {
-        debugPrint('BookingHistoryScreen: Updated UI with ${bookings.length} bookings');
+        debugPrint('BookingHistoryScreen: === FINAL RESULT ===');
+        debugPrint('BookingHistoryScreen: Total bookings from API: ${data.length}');
+        debugPrint('BookingHistoryScreen: Successfully parsed: ${bookings.length}');
+        debugPrint('BookingHistoryScreen: Failed to parse: ${data.length - bookings.length}');
+        if (bookings.isNotEmpty) {
+          debugPrint('BookingHistoryScreen: Oldest booking date: ${bookings.map((b) => b.createdAt ?? b.pickupAt ?? b.returnAt).whereType<DateTime>().fold<DateTime?>(null, (oldest, date) => oldest == null || date.isBefore(oldest) ? date : oldest)}');
+          debugPrint('BookingHistoryScreen: Newest booking date: ${bookings.map((b) => b.createdAt ?? b.pickupAt ?? b.returnAt).whereType<DateTime>().fold<DateTime?>(null, (newest, date) => newest == null || date.isAfter(newest) ? date : newest)}');
+        }
+        debugPrint('BookingHistoryScreen: === END FINAL RESULT ===');
+        
         setState(() {
           _bookings = bookings;
           _isLoading = false;
@@ -174,15 +200,19 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   Color _statusColor(int status) {
     switch (status) {
       case 0:
-        return Colors.orange; // Chờ xử lý
+        return Colors.orange; // Giỏ hàng (Draft)
       case 1:
-        return Colors.blue; // Đã xác nhận
+        return Colors.blue; // Đã xác nhận (Confirmed)
       case 2:
-        return Colors.green; // Đang thuê
+        return Colors.green; // Đã nhận máy (PickedUp)
       case 3:
-        return Colors.grey; // Đã trả
+        return Colors.grey; // Đã trả (Returned)
       case 4:
-        return Colors.red; // Đã hủy
+        return Colors.purple; // Hoàn tất (Completed)
+      case 5:
+        return Colors.red; // Đã hủy (Cancelled)
+      case 6:
+        return Colors.deepOrange; // Quá hạn (Overdue)
       default:
         return Colors.grey;
     }
@@ -217,6 +247,496 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       }
     }
     return '${buffer.toString()} VNĐ';
+  }
+
+  // Check if booking can be cancelled (before 9h of the day before pickup date)
+  bool _canCancelBooking(BookingModel booking) {
+    if (booking.pickupAt == null) return false;
+    
+    final now = DateTime.now();
+    final pickupDate = booking.pickupAt!;
+    
+    // Calculate the deadline: 9h of the day before pickup date
+    final deadlineDate = DateTime(
+      pickupDate.year,
+      pickupDate.month,
+      pickupDate.day - 1,
+      9, // 9h
+      0,
+    );
+    
+    return now.isBefore(deadlineDate);
+  }
+
+  // Get cancel deadline message
+  String _getCancelDeadlineMessage(BookingModel booking) {
+    if (booking.pickupAt == null) return '';
+    
+    final pickupDate = booking.pickupAt!;
+    final deadlineDate = DateTime(
+      pickupDate.year,
+      pickupDate.month,
+      pickupDate.day - 1,
+      9, // 9h
+      0,
+    );
+    
+    final day = deadlineDate.day.toString().padLeft(2, '0');
+    final month = deadlineDate.month.toString().padLeft(2, '0');
+    final year = deadlineDate.year;
+    
+    return 'trước 9h ngày $day/$month/$year';
+  }
+
+  // Handle pickup booking
+  Future<void> _handlePickupBooking(BookingModel booking) async {
+    if (_processingBookings[booking.id] == true) return;
+    
+    setState(() {
+      _processingBookings[booking.id] = true;
+    });
+
+    try {
+      await ApiService.updateBookingStatus(
+        bookingId: booking.id,
+        status: 'pickedUp',
+      );
+
+      if (mounted) {
+        // Show success dialog
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            elevation: 0,
+            backgroundColor: Colors.transparent,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.white,
+                    Colors.green[50]!,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Success icon with gradient background
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Colors.green[400]!,
+                            Colors.green[600]!,
+                          ],
+                        ),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.green.withOpacity(0.3),
+                            blurRadius: 15,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.check_circle,
+                        color: Colors.white,
+                        size: 48,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    // Title
+                    Text(
+                      'Đã nhận máy thành công',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey[900],
+                        letterSpacing: 0.5,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    // Content
+                    Text(
+                      'Bạn đã xác nhận nhận máy thành công. Trạng thái đơn hàng đã được cập nhật.',
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: Colors.grey[700],
+                        height: 1.5,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 32),
+                    // Close button
+                    SizedBox(
+                      width: double.infinity,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Colors.green[400]!,
+                              Colors.green[600]!,
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.green.withOpacity(0.4),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            // Reload history to update status
+                            _loadHistory();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text(
+                            'Đóng',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi: ${e.toString().replaceFirst('Exception: ', '')}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _processingBookings[booking.id] = false;
+        });
+      }
+    }
+  }
+
+  // Handle cancel booking
+  Future<void> _handleCancelBooking(BookingModel booking) async {
+    // Check if can cancel
+    if (!_canCancelBooking(booking)) {
+      final deadlineMsg = _getCancelDeadlineMessage(booking);
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Không thể hủy đơn đặt lịch'),
+            content: Text('Chỉ được hủy đơn hàng $deadlineMsg'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Đóng'),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
+
+    // Show confirmation dialog with modern UI
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white,
+                Colors.grey[50]!,
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Icon with gradient background
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.orange[300]!,
+                        Colors.orange[600]!,
+                      ],
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.orange.withOpacity(0.3),
+                        blurRadius: 15,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.sentiment_dissatisfied,
+                    color: Colors.white,
+                    size: 48,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Title
+                Text(
+                  'Xác nhận hủy đơn',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[900],
+                    letterSpacing: 0.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                // Content
+                Text(
+                  'Bạn có chắc chắn muốn hủy lịch thuê máy ảnh?',
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: Colors.grey[700],
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+                // Buttons
+                Row(
+                  children: [
+                    // Cancel button
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(
+                              color: Colors.grey[300]!,
+                              width: 1.5,
+                            ),
+                          ),
+                          foregroundColor: Colors.grey[700],
+                        ),
+                        child: const Text(
+                          'Hủy',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Confirm button
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Colors.red[400]!,
+                              Colors.red[600]!,
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.red.withOpacity(0.4),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text(
+                            'Xác nhận',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    if (_processingBookings[booking.id] == true) return;
+    
+    setState(() {
+      _processingBookings[booking.id] = true;
+    });
+
+    try {
+      await ApiService.updateBookingStatus(
+        bookingId: booking.id,
+        status: 'cancel',
+      );
+
+      if (mounted) {
+        // Show success dialog with deposit refund info
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green[700], size: 28),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text('Đã hủy lịch thành công'),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Đơn hàng đã được hủy thành công.'),
+                const SizedBox(height: 12),
+                if (booking.snapshotDepositAmount > 0)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green[200]!),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.account_balance_wallet, color: Colors.green[700], size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Số tiền đặt cọc ${_formatCurrency(booking.snapshotDepositAmount)} sẽ được trả về ví của bạn.',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.green[900],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _loadHistory();
+                },
+                child: const Text('Đóng'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi: ${e.toString().replaceFirst('Exception: ', '')}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _processingBookings[booking.id] = false;
+        });
+      }
+    }
   }
 
   @override
@@ -452,7 +972,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                                   ],
                                                 ),
                                               ),
-                                              // Status chip and arrow
+                                              // Status chip, buttons, and arrow
                                               Column(
                                                 children: [
                                                   Container(
@@ -473,6 +993,69 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                                       ),
                                                     ),
                                                   ),
+                                                  // Show "Nhận hàng" button when status is "Đã xác nhận" (status = 1)
+                                                  if (booking.status == 1) ...[
+                                                    const SizedBox(height: 8),
+                                                    SizedBox(
+                                                      width: 100,
+                                                      child: ElevatedButton(
+                                                        onPressed: _processingBookings[booking.id] == true
+                                                            ? null
+                                                            : () => _handlePickupBooking(booking),
+                                                        style: ElevatedButton.styleFrom(
+                                                          backgroundColor: Colors.green,
+                                                          foregroundColor: Colors.white,
+                                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                                          minimumSize: const Size(0, 32),
+                                                        ),
+                                                        child: _processingBookings[booking.id] == true
+                                                            ? const SizedBox(
+                                                                width: 16,
+                                                                height: 16,
+                                                                child: CircularProgressIndicator(
+                                                                  strokeWidth: 2,
+                                                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                                                ),
+                                                              )
+                                                            : const Text(
+                                                                'Nhận hàng',
+                                                                style: TextStyle(fontSize: 12),
+                                                              ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                  // Show "Hủy đơn" button only for Draft (0) and Confirmed (1) bookings
+                                                  // Hide for: PickedUp (2), Returned (3), Completed (4), Cancelled (5), Overdue (6)
+                                                  if (booking.status == 0 || booking.status == 1) ...[
+                                                    const SizedBox(height: 6),
+                                                    SizedBox(
+                                                      width: 100,
+                                                      child: OutlinedButton(
+                                                        onPressed: _processingBookings[booking.id] == true
+                                                            ? null
+                                                            : () => _handleCancelBooking(booking),
+                                                        style: OutlinedButton.styleFrom(
+                                                          foregroundColor: Colors.red,
+                                                          side: const BorderSide(color: Colors.red),
+                                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                                          minimumSize: const Size(0, 32),
+                                                        ),
+                                                        child: _processingBookings[booking.id] == true
+                                                            ? const SizedBox(
+                                                                width: 16,
+                                                                height: 16,
+                                                                child: CircularProgressIndicator(
+                                                                  strokeWidth: 2,
+                                                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
+                                                                ),
+                                                              )
+                                                            : const Text(
+                                                                'Hủy đơn',
+                                                                style: TextStyle(fontSize: 12),
+                                                              ),
+                                                      ),
+                                                    ),
+                                                  ],
                                                   const SizedBox(height: 8),
                                                   Icon(
                                                     Icons.chevron_right,

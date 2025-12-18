@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../models/booking_cart_item.dart';
+import '../screens/booking/booking_cart_item.dart';
+import '../models/work_slot_model.dart';
 import '../services/api_service.dart';
 import '../screens/contract/contract_signing_screen.dart';
 import '../screens/payment/payment_screen.dart';
@@ -54,12 +55,63 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String? _dateConflictMessage;
   // Map: itemId -> List of date ranges (pickupAt, returnAt)
   Map<String, List<Map<String, DateTime>>> _bookedDateRanges = {};
+  // Work slots
+  List<WorkSlotModel> _workSlots = [];
+  String? _selectedSlotId; // Single slot for both pickup and return
+  
+  // Get filtered slots (exclude 16h-17h slot)
+  List<WorkSlotModel> get _filteredWorkSlots {
+    return _workSlots.where((slot) => slot.endTime != '17:00').toList();
+  }
+  
+  // Get selected slot
+  WorkSlotModel? get _selectedSlot {
+    if (_selectedSlotId == null) return null;
+    try {
+      return _filteredWorkSlots.firstWhere((slot) => slot.id == _selectedSlotId);
+    } catch (e) {
+      return null;
+    }
+  }
+  
+  // Format time from "HH:mm" to "Xh" (e.g., "09:00" -> "9h")
+  String _formatTimeToHour(String time) {
+    final parts = time.split(':');
+    final hour = int.tryParse(parts[0]) ?? 0;
+    return '${hour}h';
+  }
+  
+  // Get return time (endTime + 1 hour)
+  String _getReturnTime(String endTime) {
+    final parts = endTime.split(':');
+    final hour = int.tryParse(parts[0]) ?? 0;
+    final nextHour = hour + 1;
+    return '${nextHour}h';
+  }
+  
+  // Get slot info message
+  String? get _slotInfoMessage {
+    if (_selectedSlot == null || _pickupDate == null || _returnDate == null) {
+      return null;
+    }
+    
+    final pickupStartHour = _formatTimeToHour(_selectedSlot!.startTime);
+    final pickupEndHour = _formatTimeToHour(_selectedSlot!.endTime);
+    final returnStartHour = _formatTimeToHour(_selectedSlot!.endTime);
+    final returnEndHour = _getReturnTime(_selectedSlot!.endTime);
+    
+    final pickupDateStr = '${_pickupDate!.day}/${_pickupDate!.month}/${_pickupDate!.year}';
+    final returnDateStr = '${_returnDate!.day}/${_returnDate!.month}/${_returnDate!.year}';
+    
+    return 'Vui lòng nhận hàng từ $pickupStartHour-$pickupEndHour $pickupDateStr và trả hàng từ $returnStartHour-$returnEndHour $returnDateStr';
+  }
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
     _loadAllBookings();
+    _loadWorkSlots();
   }
 
   @override
@@ -271,17 +323,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       firstDate: firstDate,
       lastDate: lastDate,
       selectableDayPredicate: (DateTime date) {
-        // Hide/disable dates that are already booked
+        // Hide/disable dates that are already booked or within 7-day buffer zone
         // Wrap in try-catch to prevent crashes
         try {
-          return !_isDateBooked(date);
+          final isBlocked = _isDateBooked(date);
+          if (isBlocked) {
+            debugPrint('CheckoutScreen: Date ${date.toString().split(' ')[0]} is blocked (booked or within 7-day buffer)');
+          }
+          return !isBlocked;
         } catch (e) {
           debugPrint('CheckoutScreen: Error in selectableDayPredicate: $e');
           // If there's an error, allow the date to be selected (fail-safe)
           return true;
         }
       },
-      helpText: isPickup ? 'Chọn ngày bắt đầu thuê' : 'Chọn ngày kết thúc thuê',
+      helpText: isPickup 
+          ? 'Chọn ngày bắt đầu thuê\n(Các ngày đã đặt )' 
+          : 'Chọn ngày kết thúc thuê\n(Các ngày đã đặt )',
       cancelText: 'Hủy',
       confirmText: 'Chọn',
       builder: (context, child) {
@@ -415,6 +473,75 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
+  Widget _buildSlotSelector({
+    required String label,
+    required String? selectedSlotId,
+    required Function(String?) onSlotSelected,
+  }) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey[300] ?? Colors.grey),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: selectedSlotId,
+              decoration: InputDecoration(
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+                filled: true,
+                fillColor: Colors.grey[50],
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              ),
+              hint: Text(
+                'Chọn slot',
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              ),
+              items: _filteredWorkSlots.map((slot) {
+                // Only show endTime (e.g., "9h" instead of "8h-9h")
+                final endHour = _formatTimeToHour(slot.endTime);
+                return DropdownMenuItem<String>(
+                  value: slot.id,
+                  child: Text(
+                    endHour,
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                );
+              }).toList(),
+              onChanged: onSlotSelected,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _loadProfile() async {
     try {
       final profileData = await ApiService.getProfile();
@@ -466,6 +593,60 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() {
         _isLoadingProfile = false;
       });
+    }
+  }
+
+  // Helper method to serialize bookingData, converting DateTime objects to ISO strings
+  Map<String, dynamic> _serializeBookingData(Map<String, dynamic> data) {
+    final serialized = <String, dynamic>{};
+    
+    for (final entry in data.entries) {
+      final key = entry.key;
+      final value = entry.value;
+      
+      if (value is DateTime) {
+        // Convert DateTime to ISO 8601 string
+        serialized[key] = value.toIso8601String();
+      } else if (value is Map) {
+        // Recursively serialize nested maps
+        serialized[key] = _serializeBookingData(Map<String, dynamic>.from(value));
+      } else if (value is List) {
+        // Serialize list items
+        serialized[key] = value.map((item) {
+          if (item is DateTime) {
+            return item.toIso8601String();
+          } else if (item is Map) {
+            return _serializeBookingData(Map<String, dynamic>.from(item));
+          }
+          return item;
+        }).toList();
+      } else {
+        // Keep other types as-is
+        serialized[key] = value;
+      }
+    }
+    
+    return serialized;
+  }
+
+  Future<void> _loadWorkSlots() async {
+    try {
+      final slotsData = await ApiService.getWorkSlots();
+      if (!mounted) return;
+      
+      final slots = slotsData
+          .map((json) => WorkSlotModel.fromJson(json as Map<String, dynamic>))
+          .where((slot) => slot.isActive)
+          .toList();
+      
+      setState(() {
+        _workSlots = slots;
+      });
+      
+      debugPrint('CheckoutScreen: Loaded ${slots.length} work slots');
+    } catch (e) {
+      debugPrint('CheckoutScreen: Error loading work slots: $e');
+      // Don't show error to user, just log it - slots are optional
     }
   }
 
@@ -536,6 +717,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   /// Check if a date is within any booked date range for the items in cart
+  /// Also blocks 7 days before pickup and 7 days after return
   bool _isDateBooked(DateTime date, {String? specificItemId}) {
     try {
       final normalizedDate = DateTime(date.year, date.month, date.day);
@@ -573,10 +755,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             continue;
           }
           
-          // Check if date is within the booked range (inclusive)
-          if (normalizedDate.isAtSameMomentAs(pickupAt) || 
-              normalizedDate.isAtSameMomentAs(returnAt) ||
-              (normalizedDate.isAfter(pickupAt) && normalizedDate.isBefore(returnAt))) {
+          // Calculate buffer zone: 7 days before pickup and 7 days after return
+          final bufferStart = pickupAt.subtract(const Duration(days: 7));
+          final bufferEnd = returnAt.add(const Duration(days: 7));
+          
+          // Check if date is within the blocked range (inclusive):
+          // - From 7 days before pickup to 7 days after return
+          // This includes: buffer zone before + booked range + buffer zone after
+          if (!normalizedDate.isBefore(bufferStart) && !normalizedDate.isAfter(bufferEnd)) {
             return true;
           }
         }
@@ -637,6 +823,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
+    // Validate slot if available
+    if (_filteredWorkSlots.isNotEmpty && _selectedSlotId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vui lòng chọn slot giờ'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     // Validate booking dates against existing bookings
     setState(() {
       _isSubmitting = true;
@@ -667,6 +864,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     try {
+      // Prepare pickup and return dates with slot times
+      DateTime finalPickupDate = _pickupDate!;
+      DateTime finalReturnDate = _returnDate!;
+      
+      // Apply slot time if selected (same slot for both pickup and return)
+      if (_selectedSlotId != null && _filteredWorkSlots.isNotEmpty) {
+        final slot = _filteredWorkSlots.firstWhere(
+          (s) => s.id == _selectedSlotId,
+          orElse: () => _filteredWorkSlots.first,
+        );
+        finalPickupDate = slot.createDateTime(_pickupDate!);
+        finalReturnDate = slot.createDateTime(_returnDate!);
+      }
+      
       // Tạo booking với payment integration
       final bookingData = await ApiService.createBookingFromCart(
         customerName: _nameController.text.trim(),
@@ -674,14 +885,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         customerEmail: _emailController.text.trim(),
         province: _selectedProvince ?? VietnamProvinces.provinces.first,
         district: _addressController.text.trim(),
-        pickupAt: _pickupDate!,
-        returnAt: _returnDate!,
+        pickupAt: finalPickupDate,
+        returnAt: finalReturnDate,
         customerAddress: _addressController.text.trim().isEmpty 
             ? null 
             : _addressController.text.trim(),
         notes: _notesController.text.trim().isEmpty
             ? null
             : _notesController.text.trim(),
+        pickupSlotId: _selectedSlotId, // Same slot for both pickup and return
+        returnSlotId: _selectedSlotId, // Same slot for both pickup and return
         createPayment: true,
         paymentAmount: widget.depositAmount > 0
             ? widget.depositAmount
@@ -754,12 +967,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           debugPrint('CheckoutScreen: Set bookingId in bookingData: $bookingId');
         }
         
+        // Serialize bookingData to ensure all DateTime objects are converted to strings
+        // This prevents serialization errors when passing data through navigation
+        final serializedBookingData = _serializeBookingData(bookingData);
+        
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder: (context) => ContractSigningScreen(
               contractId: contractId!,
-              bookingData: bookingData,
+              bookingData: serializedBookingData,
               totalAmount: widget.totalAmount,
               depositAmount: widget.depositAmount,
             ),
@@ -777,11 +994,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           bookingData['bookingId'] = bookingId;
         }
         
+        // Serialize bookingData to ensure all DateTime objects are converted to strings
+        final serializedBookingData = _serializeBookingData(bookingData);
+        
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder: (context) => PaymentScreen(
-              bookingData: bookingData,
+              bookingData: serializedBookingData,
               totalAmount: widget.totalAmount,
               depositAmount: widget.depositAmount,
             ),
@@ -835,15 +1055,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         final bookedPickup = range['pickupAt']!;
         final bookedReturn = range['returnAt']!;
 
-        // Check if new booking overlaps with existing booking
+        // Calculate buffer zone: 7 days before pickup and 7 days after return
+        final bufferStart = bookedPickup.subtract(const Duration(days: 7));
+        final bufferEnd = bookedReturn.add(const Duration(days: 7));
+
+        // Check if new booking overlaps with existing booking OR buffer zone
         // Overlap occurs if:
-        // - new pickup is before or equal to booked return AND
-        // - new return is after or equal to booked pickup
-        if (normalizedPickup.isBefore(bookedReturn.add(const Duration(days: 1))) &&
-            normalizedReturn.isAfter(bookedPickup.subtract(const Duration(days: 1)))) {
+        // - new pickup is within blocked range (bufferStart to bufferEnd) OR
+        // - new return is within blocked range OR
+        // - new booking range overlaps with blocked range
+        if ((!normalizedPickup.isBefore(bufferStart) && !normalizedPickup.isAfter(bufferEnd)) ||
+            (!normalizedReturn.isBefore(bufferStart) && !normalizedReturn.isAfter(bufferEnd)) ||
+            (normalizedPickup.isBefore(bufferStart) && normalizedReturn.isAfter(bufferEnd))) {
           return _ValidationResult(
             hasConflict: true,
-            message: '${cartItem.cameraName} đã được đặt từ ${_formatDate(bookedPickup)} đến ${_formatDate(bookedReturn)}. Vui lòng chọn ngày khác.',
+            message: '${cartItem.cameraName} đã được đặt từ ${_formatDate(bookedPickup)} đến ${_formatDate(bookedReturn)}. Không thể đặt trong khoảng thời gian này và 7 ngày trước/sau. Vui lòng chọn ngày khác.',
             cameraName: cartItem.cameraName,
             existingPickupDate: bookedPickup,
             existingReturnDate: bookedReturn,
@@ -1067,13 +1293,27 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(
-                          'Đã được đặt từ ${_formatDate(conflictResult.existingPickupDate)} đến ${_formatDate(conflictResult.existingReturnDate)}',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.orange[900],
-                            fontWeight: FontWeight.w600,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Đã được đặt từ ${_formatDate(conflictResult.existingPickupDate)} đến ${_formatDate(conflictResult.existingReturnDate)}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.orange[900],
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Không thể đặt trong khoảng thời gian này và 7 ngày trước/sau',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange[700],
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -1105,12 +1345,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     ),
                     const SizedBox(width: 8),
                     const Expanded(
-                      child: Text(
-                        'Vui lòng chọn ngày khác để tiếp tục đặt lịch.',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Vui lòng chọn ngày khác để tiếp tục đặt lịch.',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Lưu ý: Hệ thống sẽ tự động khóa 7 ngày trước và sau mỗi lịch đặt để đảm bảo chất lượng dịch vụ.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.blue,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -1585,12 +1839,36 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 ),
                               ),
                         const SizedBox(height: 16),
-                        Text(
-                          'Ngày thuê',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.primary,
+                        // Ngày nhận và trả hàng
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.blue[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.blue[200]!,
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline,
+                                color: Colors.blue[700],
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Ngày nhận và trả hàng',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.blue[900],
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -1621,6 +1899,73 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             ),
                           ],
                         ),
+                        // Slot selection (single slot for both pickup and return)
+                        if (_filteredWorkSlots.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            'Chọn slot giờ',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Slot giờ này sẽ áp dụng cho cả giờ nhận và trả hàng',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey[600],
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildSlotSelector(
+                            label: 'Slot giờ',
+                            selectedSlotId: _selectedSlotId,
+                            onSlotSelected: (slotId) {
+                              setState(() {
+                                _selectedSlotId = slotId;
+                              });
+                            },
+                          ),
+                          // Show slot info message when slot is selected
+                          if (_slotInfoMessage != null) ...[
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.blue[50],
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: Colors.blue[200]!,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.info_outline,
+                                    size: 18,
+                                    color: Colors.blue[700],
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _slotInfoMessage!,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.blue[900],
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
                         if (_dateConflictMessage != null) ...[
                           const SizedBox(height: 12),
                           Row(

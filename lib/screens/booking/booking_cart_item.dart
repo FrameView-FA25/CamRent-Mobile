@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import '../services/api_service.dart';
+import '../../services/api_service.dart';
 
 class BookingCartItem {
   final String id;

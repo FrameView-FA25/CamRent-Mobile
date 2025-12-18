@@ -11,6 +11,7 @@ class AccessoryModel {
   final String imageUrl;
   final List<String> features;
   final bool isAvailable;
+  final String branchId;
   final String branchName;
   final String branchAddress;
   final String ownerName;
@@ -34,6 +35,7 @@ class AccessoryModel {
     required this.features,
     this.variant,
     this.isAvailable = true,
+    this.branchId = '',
     this.branchName = '',
     this.branchAddress = '',
     this.ownerName = '',
@@ -207,6 +209,9 @@ class AccessoryModel {
     final variant = json['variant']?.toString();
     final branch = json['branch'] as Map<String, dynamic>?;
     final accessoryId = json['id']?.toString() ?? json['_id']?.toString();
+    String branchId = branch?['id']?.toString() ?? 
+                     json['branchId']?.toString() ?? 
+                     '';
     String branchName = branch?['name']?.toString() ?? '';
     String branchAddress = _buildBranchAddress(
       branch?['address'] as Map<String, dynamic>?,
@@ -327,6 +332,7 @@ class AccessoryModel {
       imageUrl: imageUrl,
       features: features,
       isAvailable: json['isAvailable'] ?? json['is_available'] ?? true,
+      branchId: branchId,
       branchName: branchName,
       branchAddress: branchAddress,
       ownerName: ownerName,

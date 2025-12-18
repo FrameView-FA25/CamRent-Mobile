@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../models/booking_model.dart';
+import '../booking/booking_model.dart';
 import '../../services/api_service.dart';
 import 'staff_booking_detail_screen.dart';
 

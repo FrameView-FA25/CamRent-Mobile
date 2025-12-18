@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/branch_model.dart';
 
 enum BookingItemType {
   camera(1),
@@ -211,6 +212,39 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('auth_token');
     await prefs.remove('user_role');
+    await prefs.remove('selected_branch_id');
+    await prefs.remove('selected_branch_name');
+  }
+
+  // Save selected branch ID and name
+  static Future<void> saveSelectedBranchId(String? branchId, {String? branchName}) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (branchId != null && branchId.isNotEmpty) {
+      await prefs.setString('selected_branch_id', branchId);
+      if (branchName != null && branchName.isNotEmpty) {
+        await prefs.setString('selected_branch_name', branchName);
+      }
+      debugPrint('ApiService: Saved selected branch ID: $branchId, Name: $branchName');
+    } else {
+      await prefs.remove('selected_branch_id');
+      await prefs.remove('selected_branch_name');
+    }
+  }
+
+  // Get selected branch ID
+  static Future<String?> getSelectedBranchId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final branchId = prefs.getString('selected_branch_id');
+    debugPrint('ApiService: Retrieved selected branch ID: $branchId');
+    return branchId;
+  }
+
+  // Get selected branch name
+  static Future<String?> getSelectedBranchName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final branchName = prefs.getString('selected_branch_name');
+    debugPrint('ApiService: Retrieved selected branch name: $branchName');
+    return branchName;
   }
 
   // Get headers with authentication
@@ -646,13 +680,21 @@ class ApiService {
     }
   }
 
-  static Future<List<dynamic>> getCameras() async {
+  static Future<List<dynamic>> getCameras({String? branchId}) async {
     try {
-      // Add pagination parameters to get all items
-      final uri = Uri.parse('$baseUrl/Cameras').replace(queryParameters: {
+      // Build query parameters
+      final queryParams = <String, String>{
         'page': '1',
         'pageSize': '1000', // Get a large number to fetch all items
-      });
+      };
+      
+      // Add branchId filter if provided
+      if (branchId != null && branchId.isNotEmpty) {
+        queryParams['branchId'] = branchId;
+        debugPrint('ApiService: getCameras - Filtering by branchId: $branchId');
+      }
+      
+      final uri = Uri.parse('$baseUrl/Cameras').replace(queryParameters: queryParams);
       
       final response = await http.get(
         uri,
@@ -791,13 +833,21 @@ class ApiService {
   }
 
   // Accessory APIs
-  static Future<List<dynamic>> getAccessories() async {
+  static Future<List<dynamic>> getAccessories({String? branchId}) async {
     try {
-      // Add pagination parameters to get all items
-      final uri = Uri.parse('$baseUrl/Accessories').replace(queryParameters: {
+      // Build query parameters
+      final queryParams = <String, String>{
         'page': '1',
         'pageSize': '1000', // Get a large number to fetch all items
-      });
+      };
+      
+      // Add branchId filter if provided
+      if (branchId != null && branchId.isNotEmpty) {
+        queryParams['branchId'] = branchId;
+        debugPrint('ApiService: getAccessories - Filtering by branchId: $branchId');
+      }
+      
+      final uri = Uri.parse('$baseUrl/Accessories').replace(queryParameters: queryParams);
       
       final response = await http.get(
         uri,
@@ -918,6 +968,89 @@ class ApiService {
     } catch (e) {
       debugPrint('Error fetching accessories: $e');
       throw Exception('Failed to fetch accessories: ${e.toString()}');
+    }
+  }
+
+  // Get branches
+  static Future<List<BranchModel>> getBranches() async {
+    try {
+      final uri = Uri.parse('$baseUrl/Branchs');
+      final response = await http.get(
+        uri,
+        headers: await _getHeaders(requiresAuth: true, includeContentType: false),
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+        List<dynamic> data = [];
+        
+        if (decoded is List) {
+          data = decoded;
+        } else if (decoded is Map<String, dynamic>) {
+          // Try to extract list from common keys
+          const keys = ['items', 'branches', 'data', 'results', 'value'];
+          bool found = false;
+          for (final key in keys) {
+            if (decoded[key] is List) {
+              data = decoded[key] as List;
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            throw Exception('Không tìm thấy danh sách chi nhánh trong response');
+          }
+        } else {
+          throw Exception('Định dạng response không hợp lệ');
+        }
+        
+        return data.map((json) => BranchModel.fromJson(json as Map<String, dynamic>)).toList();
+      } else {
+        final errorMsg = _extractErrorMessage(response.body);
+        throw Exception(errorMsg ?? 'Lỗi khi tải danh sách chi nhánh: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('ApiService: getBranches - Error: $e');
+      throw Exception('Không thể tải danh sách chi nhánh: ${e.toString().replaceFirst('Exception: ', '')}');
+    }
+  }
+
+  // Get work slots
+  static Future<List<dynamic>> getWorkSlots() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/WorkSlots'),
+        headers: await _getHeaders(requiresAuth: true, includeContentType: false),
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        try {
+          final decoded = jsonDecode(response.body);
+          if (decoded is List) {
+            return decoded;
+          } else if (decoded is Map<String, dynamic>) {
+            // Try to extract list from common keys
+            final keys = ['items', 'workSlots', 'slots', 'data', 'results', 'value'];
+            for (final key in keys) {
+              if (decoded[key] is List) {
+                return decoded[key] as List;
+              }
+            }
+            // If no list found, return empty
+            return [];
+          }
+          return [];
+        } catch (e) {
+          debugPrint('ApiService: Error parsing work slots: $e');
+          throw Exception('Lỗi khi xử lý dữ liệu slot giờ');
+        }
+      } else {
+        final errorMsg = _extractErrorMessage(response.body);
+        throw Exception(errorMsg ?? 'Lỗi khi tải danh sách slot giờ: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('ApiService: getWorkSlots - Error: $e');
+      throw Exception('Không thể tải danh sách slot giờ: ${e.toString().replaceFirst('Exception: ', '')}');
     }
   }
 
@@ -1302,6 +1435,8 @@ class ApiService {
     required DateTime returnAt,
     String? customerAddress,
     String? notes,
+    String? pickupSlotId,
+    String? returnSlotId,
     bool createPayment = true,
     double? paymentAmount,
     String? paymentDescription,
@@ -1345,21 +1480,38 @@ class ApiService {
         throw Exception('Không tìm thấy giỏ hàng. Vui lòng thêm sản phẩm vào giỏ hàng trước.');
       }
 
-      // Normalize pickup/return to UTC at fixed hours
+      // Normalize pickup/return to UTC
+      // If slot IDs are provided, use slot times; otherwise use default times (10:00 and 18:00)
+      int pickupHour = 10;
+      int pickupMinute = 0;
+      int returnHour = 18;
+      int returnMinute = 0;
+      
+      // If slot IDs are provided, we'll need to fetch slot details to get times
+      // For now, use the times from the DateTime objects if they have specific hours
+      if (pickupAt.hour != 0 || pickupAt.minute != 0) {
+        pickupHour = pickupAt.hour;
+        pickupMinute = pickupAt.minute;
+      }
+      if (returnAt.hour != 0 || returnAt.minute != 0) {
+        returnHour = returnAt.hour;
+        returnMinute = returnAt.minute;
+      }
+      
       final normalizedPickup = DateTime.utc(
         pickupAt.year,
         pickupAt.month,
         pickupAt.day,
-        10,
-        0,
+        pickupHour,
+        pickupMinute,
         0,
       );
       var normalizedReturn = DateTime.utc(
         returnAt.year,
         returnAt.month,
         returnAt.day,
-        18,
-        0,
+        returnHour,
+        returnMinute,
         0,
       );
       if (!normalizedReturn.isAfter(normalizedPickup)) {
@@ -1374,7 +1526,7 @@ class ApiService {
       };
 
       // Build request body according to API spec: location, pickupAt, returnAt
-      // Also include cartId to help backend find the cart
+      // Also include cartId and slot IDs to help backend find the cart
       final requestBody = <String, dynamic>{
         'location': locationAddress,
         'pickupAt': normalizedPickup.toIso8601String(),
@@ -1384,6 +1536,14 @@ class ApiService {
       // Add cartId to request body if available (some backends may need it)
       if (cartId.isNotEmpty) {
         requestBody['cartId'] = cartId;
+      }
+      
+      // Add slot IDs if provided
+      if (pickupSlotId != null && pickupSlotId.isNotEmpty) {
+        requestBody['pickupSlotId'] = pickupSlotId;
+      }
+      if (returnSlotId != null && returnSlotId.isNotEmpty) {
+        requestBody['returnSlotId'] = returnSlotId;
       }
 
       debugPrint('Creating booking from cart with body: $requestBody');
@@ -2336,26 +2496,87 @@ class ApiService {
   // Update booking status (isConfirm)
   static Future<Map<String, dynamic>> updateBookingStatus({
     required String bookingId,
-    required bool isConfirm,
+    bool? isConfirm,
     String? status,
   }) async {
     try {
       final cleanedId = bookingId.replaceAll('"', '').replaceAll("'", '').trim();
       debugPrint('updateBookingStatus: Updating booking $cleanedId with isConfirm: $isConfirm, status: $status');
 
-      final requestBody = <String, dynamic>{
-        'isConfirm': isConfirm,
-      };
+      final requestBody = <String, dynamic>{};
       
+      // When updating status, only send status field, not isConfirm
+      // Backend may reset to Draft if both are sent or format is wrong
       if (status != null && status.isNotEmpty) {
-        requestBody['status'] = status;
+        // Convert status to proper format for backend
+        // Backend expects PascalCase enum values: "PickedUp", "Cancelled", etc.
+        String formattedStatus = status;
+        final statusLower = status.toLowerCase().trim();
+        
+        // Map common status values to backend format
+        if (statusLower == 'pickedup' || statusLower == 'picked_up') {
+          formattedStatus = 'PickedUp';
+        } else if (statusLower == 'cancel' || statusLower == 'cancelled' || statusLower == 'canceled') {
+          formattedStatus = 'Cancelled';
+        } else if (statusLower == 'confirmed' || statusLower == 'confirm') {
+          formattedStatus = 'Confirmed';
+        } else if (statusLower == 'returned' || statusLower == 'return') {
+          formattedStatus = 'Returned';
+        } else if (statusLower == 'draft') {
+          formattedStatus = 'Draft';
+        } else if (status.length > 1) {
+          // Convert camelCase or lowercase to PascalCase
+          // Handle camelCase like "pickedUp" -> "PickedUp"
+          if (statusLower.contains('_')) {
+            // snake_case: convert to PascalCase
+            formattedStatus = statusLower
+                .split('_')
+                .map((word) => word.isEmpty ? '' : word[0].toUpperCase() + word.substring(1))
+                .join('');
+          } else {
+            // camelCase: convert "pickedUp" to "PickedUp"
+            // Find the first uppercase letter after lowercase
+            String result = status[0].toUpperCase();
+            for (int i = 1; i < status.length; i++) {
+              if (status[i].toUpperCase() == status[i] && status[i-1].toLowerCase() == status[i-1]) {
+                // Found uppercase after lowercase (camelCase)
+                result += status.substring(i);
+                break;
+              } else {
+                result += status[i];
+              }
+            }
+            if (result.length == status.length) {
+              // No camelCase detected, just capitalize first letter
+              formattedStatus = status[0].toUpperCase() + status.substring(1);
+            } else {
+              formattedStatus = result;
+            }
+          }
+        }
+        
+        requestBody['status'] = formattedStatus;
+        debugPrint('updateBookingStatus: Status converted from "$status" to "$formattedStatus"');
+      } else if (isConfirm != null) {
+        // Only send isConfirm if status is not provided
+        requestBody['isConfirm'] = isConfirm;
       }
 
       debugPrint('updateBookingStatus: Request body: $requestBody');
 
+      // Get headers and verify token
+      final headers = await _getHeaders(requiresAuth: true);
+      final token = await _getToken();
+      debugPrint('updateBookingStatus: Token exists: ${token != null}');
+      debugPrint('updateBookingStatus: Token length: ${token?.length ?? 0}');
+      debugPrint('updateBookingStatus: Headers: ${headers.keys.toList()}');
+      if (token == null || token.isEmpty) {
+        throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại');
+      }
+
       final response = await http.put(
         Uri.parse('$baseUrl/Bookings/$cleanedId/update-status'),
-        headers: await _getHeaders(requiresAuth: true),
+        headers: headers,
         body: jsonEncode(requestBody),
       );
 
@@ -2364,6 +2585,14 @@ class ApiService {
 
       debugPrint('updateBookingStatus: Response status: $statusCode');
       debugPrint('updateBookingStatus: Response body: ${body.length > 500 ? "${body.substring(0, 500)}..." : body}');
+      
+      // Handle 401 specifically
+      if (statusCode == 401) {
+        debugPrint('updateBookingStatus: 401 Unauthorized - Token may be expired or invalid');
+        // Clear token if it's invalid
+        await clearToken();
+        throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại');
+      }
 
       if (statusCode >= 200 && statusCode < 300) {
         if (body.isEmpty) {
@@ -2448,8 +2677,11 @@ class ApiService {
         throw Exception('Vui lòng đăng nhập để xem lịch sử đặt lịch');
       }
 
+      // Try to get all bookings without date filters
+      // Some backends may limit results, so we'll try with and without query params
       final endpoint = '$baseUrl/Bookings/renterbookings';
       debugPrint('getBookings: Calling endpoint: $endpoint');
+      debugPrint('getBookings: Attempting to fetch ALL bookings (no date filters)');
       
       // Use /Bookings/renterbookings endpoint to get renter's booking history
       // Add timeout to prevent hanging

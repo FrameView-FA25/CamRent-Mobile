@@ -94,15 +94,19 @@ class BookingModel {
   String _getStatusString(int status) {
     switch (status) {
       case 0:
-        return 'Chờ xử lý';
+        return 'Giỏ hàng'; // Draft
       case 1:
-        return 'Đã xác nhận';
+        return 'Đã xác nhận'; // Confirmed
       case 2:
-        return 'Đang thuê';
+        return 'Đã nhận máy'; // PickedUp
       case 3:
-        return 'Đã trả';
+        return 'Đã trả'; // Returned
       case 4:
-        return 'Đã hủy';
+        return 'Hoàn tất'; // Completed
+      case 5:
+        return 'Đã hủy'; // Cancelled
+      case 6:
+        return 'Quá hạn'; // Overdue
       default:
         return 'Không xác định';
     }
@@ -179,17 +183,19 @@ class BookingModel {
         final statusStr = json['status'].toString().toLowerCase();
         // Map common status strings to int values
         final statusMap = {
-          'draft': 0, // Draft status maps to pending
+          'draft': 0, // Draft = 0
           'pendingapproval': 0,
           'pending': 0,
           'approved': 1,
-          'confirmed': 1,
+          'confirmed': 1, // Confirmed = 1
+          'pickedup': 2, // PickedUp = 2
           'renting': 2,
           'active': 2,
-          'returned': 3,
-          'completed': 3,
-          'cancelled': 4,
-          'canceled': 4,
+          'returned': 3, // Returned = 3
+          'completed': 4, // Completed = 4
+          'cancelled': 5, // Cancelled = 5
+          'canceled': 5,
+          'overdue': 6, // Overdue = 6
           'rejected': 5,
         };
         bookingStatus = statusMap[statusStr] ?? 0;

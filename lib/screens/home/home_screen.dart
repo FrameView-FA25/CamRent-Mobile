@@ -12,7 +12,8 @@ import '../camera/camera_detail_screen.dart';
 import '../accessory/accessory_detail_screen.dart';
 import '../booking/booking_list_screen.dart';
 import '../../checkout/checkout_screen.dart';
-import '../../models/booking_cart_item.dart';
+import '../booking/booking_cart_item.dart';
+import '../branch/branch_selection_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -37,6 +38,9 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _startDate;
   DateTime? _endDate;
   bool _isLoadingAvailableCameras = false;
+  
+  // Current branch name
+  String? _currentBranchName;
 
   Future<void> _loadAvailableCameras() async {
     if (_startDate == null || _endDate == null) {
@@ -48,6 +52,10 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
+      // Get selected branch name before calling API
+      final selectedBranchName = await ApiService.getSelectedBranchName();
+      debugPrint('HomeScreen: Loading available cameras with branchName: $selectedBranchName');
+      
       final availableCamerasData = await ApiService.getAvailableCameras(
         startDate: _startDate!,
         endDate: _endDate!,
@@ -55,14 +63,31 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // Convert available cameras to ProductItem list
       final availableProducts = <ProductItem>[];
+      int totalAvailable = 0;
+      int filteredAvailable = 0;
+      
       for (final json in availableCamerasData) {
         if (json is Map<String, dynamic>) {
           final camera = CameraModel.fromJson(json);
-          if (camera.branchName.isNotEmpty) {
-            availableProducts.add(ProductItem.camera(camera));
+          totalAvailable++;
+          
+          // Filter by selected branch name if available
+          if (selectedBranchName != null && selectedBranchName.isNotEmpty) {
+            if (camera.branchName.toLowerCase().trim() == selectedBranchName.toLowerCase().trim()) {
+              availableProducts.add(ProductItem.camera(camera));
+              filteredAvailable++;
+            }
+          } else {
+            // If no branch selected, show all cameras with branchName
+            if (camera.branchName.isNotEmpty) {
+              availableProducts.add(ProductItem.camera(camera));
+              filteredAvailable++;
+            }
           }
         }
       }
+      
+      debugPrint('HomeScreen: Total available cameras: $totalAvailable, Filtered: $filteredAvailable, branchName: $selectedBranchName');
 
       if (mounted) {
         setState(() {
@@ -107,15 +132,24 @@ class _HomeScreenState extends State<HomeScreen> {
           errorMessage = 'Không thể tải danh sách máy ảnh khả dụng: ${e.toString().replaceFirst('Exception: ', '')}';
         }
       } else {
+        // Get selected branch ID before calling API
+        final selectedBranchId = await ApiService.getSelectedBranchId();
+        debugPrint('HomeScreen: Loading cameras with branchId: $selectedBranchId');
+        
         try {
-          camerasData = await ApiService.getCameras();
+          // Pass branchId to API if available (API may support server-side filtering)
+          camerasData = await ApiService.getCameras(branchId: selectedBranchId);
         } catch (e) {
           errorMessage = 'Không thể tải danh sách máy ảnh: ${e.toString().replaceFirst('Exception: ', '')}';
         }
       }
 
+      // Get selected branch ID for accessories API
+      final selectedBranchIdForAccessories = await ApiService.getSelectedBranchId();
+      
       try {
-        accessoriesData = await ApiService.getAccessories();
+        // Pass branchId to API if available
+        accessoriesData = await ApiService.getAccessories(branchId: selectedBranchIdForAccessories);
       } catch (e) {
         if (errorMessage != null) {
           errorMessage += '\nKhông thể tải danh sách phụ kiện: ${e.toString().replaceFirst('Exception: ', '')}';
@@ -124,23 +158,55 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
 
+      // Get selected branch name for client-side filtering
+      final selectedBranchName = await ApiService.getSelectedBranchName();
+      debugPrint('HomeScreen: Filtering products by branchName: $selectedBranchName');
+      
       final products = <ProductItem>[];
+      int totalCameras = 0;
+      int filteredCameras = 0;
+      
       for (final json in camerasData) {
         if (json is Map<String, dynamic>) {
           final camera = CameraModel.fromJson(json);
-          // Chỉ hiển thị camera có branchName
-          if (camera.branchName.isNotEmpty) {
-            products.add(ProductItem.camera(camera));
+          totalCameras++;
+          
+          // Debug: Log branchName for first few cameras
+          if (totalCameras <= 3) {
+            debugPrint('HomeScreen: Camera ${camera.name} - branchName: "${camera.branchName}"');
+          }
+          
+          // Filter by selected branch name if available
+          if (selectedBranchName != null && selectedBranchName.isNotEmpty) {
+            if (camera.branchName.toLowerCase().trim() == selectedBranchName.toLowerCase().trim()) {
+              products.add(ProductItem.camera(camera));
+              filteredCameras++;
+            }
+          } else {
+            // If no branch selected, show all cameras with branchName
+            if (camera.branchName.isNotEmpty) {
+              products.add(ProductItem.camera(camera));
+              filteredCameras++;
+            }
           }
         }
       }
+      
+      debugPrint('HomeScreen: Total cameras: $totalCameras, Filtered cameras: $filteredCameras, Selected branchName: $selectedBranchName');
 
       for (final json in accessoriesData) {
         if (json is Map<String, dynamic>) {
           final accessory = AccessoryModel.fromJson(json);
-          // Chỉ hiển thị phụ kiện có branchName
-          if (accessory.branchName.isNotEmpty) {
-            products.add(ProductItem.accessory(accessory));
+          // Filter by selected branch name if available
+          if (selectedBranchName != null && selectedBranchName.isNotEmpty) {
+            if (accessory.branchName.toLowerCase().trim() == selectedBranchName.toLowerCase().trim()) {
+              products.add(ProductItem.accessory(accessory));
+            }
+          } else {
+            // If no branch selected, show all accessories with branchName
+            if (accessory.branchName.isNotEmpty) {
+              products.add(ProductItem.accessory(accessory));
+            }
           }
         }
       }
@@ -201,7 +267,21 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _searchController.addListener(_filterProducts);
     _loadProducts();
+    _loadCurrentBranchName();
     _startBannerAutoScroll();
+  }
+  
+  Future<void> _loadCurrentBranchName() async {
+    try {
+      final branchName = await ApiService.getSelectedBranchName();
+      if (mounted) {
+        setState(() {
+          _currentBranchName = branchName;
+        });
+      }
+    } catch (e) {
+      debugPrint('HomeScreen: Error loading current branch name: $e');
+    }
   }
 
   @override
@@ -1095,6 +1175,52 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: 12),
                       const Center(
                         child: CircularProgressIndicator(),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    // Button to change branch
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          // Navigate to branch selection screen
+                          final result = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const BranchSelectionScreen(),
+                            ),
+                          );
+                          
+                          // Reload products after returning from branch selection
+                          if (mounted && result == true) {
+                            _loadProducts();
+                            _loadCurrentBranchName();
+                          }
+                        },
+                        icon: const Icon(Icons.store),
+                        label: const Text('Chọn lại chi nhánh'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          side: BorderSide(
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Display current branch name
+                    if (_currentBranchName != null && _currentBranchName!.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Chi nhánh hiện tại : $_currentBranchName',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[700],
+                          fontWeight: FontWeight.w500,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
                     ],
                   ],

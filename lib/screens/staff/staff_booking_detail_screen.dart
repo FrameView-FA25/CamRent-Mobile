@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../models/booking_model.dart';
+import '../booking/booking_model.dart';
 import '../../services/api_service.dart';
-import '../../models/booking_status_model.dart';
+import '../booking/booking_status_model.dart';
 
 class StaffBookingDetailScreen extends StatefulWidget {
   final Map<String, dynamic> bookingData;
