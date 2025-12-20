@@ -625,12 +625,44 @@ class _PaymentScreenState extends State<PaymentScreen> {
   bool _isProcessing = false;
   String _statusMessage = 'Chưa có giao dịch thanh toán';
   int _selectedPaymentMethod = 1; // 1 = PayOS, 2 = Wallet
+  double? _walletBalance;
+  bool _isLoadingWallet = false;
 
   @override
   void initState() {
     super.initState();
     // Removed auto-open payment URL - user should choose payment method first
     // Payment URL will be opened only when user selects PayOS and clicks "Thanh toán"
+    _loadWalletBalance();
+  }
+
+  Future<void> _loadWalletBalance() async {
+    setState(() {
+      _isLoadingWallet = true;
+    });
+
+    try {
+      final walletData = await ApiService.getWalletInfo();
+      if (mounted) {
+        setState(() {
+          if (walletData['balance'] != null) {
+            _walletBalance = (walletData['balance'] is num)
+                ? (walletData['balance'] as num).toDouble()
+                : double.tryParse(walletData['balance'].toString()) ?? 0.0;
+          } else {
+            _walletBalance = 0.0;
+          }
+          _isLoadingWallet = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _walletBalance = null;
+          _isLoadingWallet = false;
+        });
+      }
+    }
   }
 
   String? _getPaymentUrl() {

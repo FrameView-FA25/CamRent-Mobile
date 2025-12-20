@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'booking_model.dart';
 import '../../services/api_service.dart';
 import 'booking_detail_screen.dart';
+import '../report/create_report_screen.dart';
 
 class BookingHistoryScreen extends StatefulWidget {
   const BookingHistoryScreen({super.key});
@@ -286,6 +287,23 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     final year = deadlineDate.year;
     
     return 'trước 9h ngày $day/$month/$year';
+  }
+
+  // Handle create report
+  Future<void> _handleCreateReport(BookingModel booking) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateReportScreen(
+          bookingId: booking.id,
+        ),
+      ),
+    );
+
+    // Reload bookings if report was created successfully
+    if (mounted && result == true) {
+      _loadHistory();
+    }
   }
 
   // Handle pickup booking
@@ -1024,9 +1042,33 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                                       ),
                                                     ),
                                                   ],
+                                                  // Show "Tạo report" button when status is "Đã nhận máy" (status = 2)
+                                                  if (booking.status == 2) ...[
+                                                    const SizedBox(height: 8),
+                                                    SizedBox(
+                                                      width: 100,
+                                                      child: ElevatedButton(
+                                                        onPressed: () => _handleCreateReport(booking),
+                                                        style: ElevatedButton.styleFrom(
+                                                          backgroundColor: Colors.orange,
+                                                          foregroundColor: Colors.white,
+                                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                                          minimumSize: const Size(0, 32),
+                                                        ),
+                                                        child: const Text(
+                                                          'Tạo report',
+                                                          style: TextStyle(fontSize: 12),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
                                                   // Show "Hủy đơn" button only for Draft (0) and Confirmed (1) bookings
                                                   // Hide for: PickedUp (2), Returned (3), Completed (4), Cancelled (5), Overdue (6)
-                                                  if (booking.status == 0 || booking.status == 1) ...[
+                                                  // Also check statusString to ensure "Đã nhận máy" status is excluded
+                                                  if ((booking.status == 0 || booking.status == 1) &&
+                                                      booking.status != 2 &&
+                                                      !booking.statusString.toLowerCase().contains('đã nhận máy') &&
+                                                      !booking.statusString.toLowerCase().contains('pickedup')) ...[
                                                     const SizedBox(height: 6),
                                                     SizedBox(
                                                       width: 100,

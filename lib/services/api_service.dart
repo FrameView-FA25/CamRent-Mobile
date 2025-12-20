@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -2506,57 +2507,46 @@ class ApiService {
       final requestBody = <String, dynamic>{};
       
       // When updating status, only send status field, not isConfirm
-      // Backend may reset to Draft if both are sent or format is wrong
+      // Backend expects status as integer (0-9) based on BookingStatus enum:
+      // 0 = Draft, 1 = Confirmed, 2 = PickedUp, 3 = Returned, 4 = Completed, 5 = Cancelled, 6 = Overdue
       if (status != null && status.isNotEmpty) {
-        // Convert status to proper format for backend
-        // Backend expects PascalCase enum values: "PickedUp", "Cancelled", etc.
-        String formattedStatus = status;
+        // Convert status string to integer enum value
+        int? statusInt;
         final statusLower = status.toLowerCase().trim();
         
-        // Map common status values to backend format
-        if (statusLower == 'pickedup' || statusLower == 'picked_up') {
-          formattedStatus = 'PickedUp';
-        } else if (statusLower == 'cancel' || statusLower == 'cancelled' || statusLower == 'canceled') {
-          formattedStatus = 'Cancelled';
-        } else if (statusLower == 'confirmed' || statusLower == 'confirm') {
-          formattedStatus = 'Confirmed';
-        } else if (statusLower == 'returned' || statusLower == 'return') {
-          formattedStatus = 'Returned';
-        } else if (statusLower == 'draft') {
-          formattedStatus = 'Draft';
-        } else if (status.length > 1) {
-          // Convert camelCase or lowercase to PascalCase
-          // Handle camelCase like "pickedUp" -> "PickedUp"
-          if (statusLower.contains('_')) {
-            // snake_case: convert to PascalCase
-            formattedStatus = statusLower
-                .split('_')
-                .map((word) => word.isEmpty ? '' : word[0].toUpperCase() + word.substring(1))
-                .join('');
-          } else {
-            // camelCase: convert "pickedUp" to "PickedUp"
-            // Find the first uppercase letter after lowercase
-            String result = status[0].toUpperCase();
-            for (int i = 1; i < status.length; i++) {
-              if (status[i].toUpperCase() == status[i] && status[i-1].toLowerCase() == status[i-1]) {
-                // Found uppercase after lowercase (camelCase)
-                result += status.substring(i);
-                break;
-              } else {
-                result += status[i];
-              }
+        // Map status strings to integer values
+        if (statusLower == 'draft' || statusLower == '0') {
+          statusInt = 0; // Draft
+        } else if (statusLower == 'confirmed' || statusLower == 'confirm' || statusLower == '1') {
+          statusInt = 1; // Confirmed
+        } else if (statusLower == 'pickedup' || statusLower == 'picked_up' || statusLower == '2') {
+          statusInt = 2; // PickedUp
+        } else if (statusLower == 'returned' || statusLower == 'return' || statusLower == '3') {
+          statusInt = 3; // Returned
+        } else if (statusLower == 'completed' || statusLower == 'complete' || statusLower == '4') {
+          statusInt = 4; // Completed
+        } else if (statusLower == 'cancelled' || statusLower == 'canceled' || statusLower == 'cancel' || statusLower == '5') {
+          statusInt = 5; // Cancelled
+        } else if (statusLower == 'overdue' || statusLower == '6') {
+          statusInt = 6; // Overdue
+        } else {
+          // Try to parse as integer directly
+          try {
+            statusInt = int.parse(statusLower);
+            if (statusInt < 0 || statusInt > 9) {
+              statusInt = null;
             }
-            if (result.length == status.length) {
-              // No camelCase detected, just capitalize first letter
-              formattedStatus = status[0].toUpperCase() + status.substring(1);
-            } else {
-              formattedStatus = result;
-            }
+          } catch (e) {
+            statusInt = null;
           }
         }
         
-        requestBody['status'] = formattedStatus;
-        debugPrint('updateBookingStatus: Status converted from "$status" to "$formattedStatus"');
+        if (statusInt != null) {
+          requestBody['status'] = statusInt;
+          debugPrint('updateBookingStatus: Status converted from "$status" to integer $statusInt');
+        } else {
+          throw Exception('Invalid status value: $status. Expected: draft, confirmed, pickedup, returned, completed, cancelled, overdue, or integer 0-9');
+        }
       } else if (isConfirm != null) {
         // Only send isConfirm if status is not provided
         requestBody['isConfirm'] = isConfirm;
@@ -2613,6 +2603,100 @@ class ApiService {
         rethrow;
       }
       throw Exception('Failed to update booking status: ${e.toString()}');
+    }
+  }
+
+  /// Create a report for a booking
+  /// Endpoint: POST /api/Bookings/{bookingId}/reports
+  /// Parameters: title, description, severity, images (List<File>)
+  static Future<Map<String, dynamic>> createReport({
+    required String bookingId,
+    required String title,
+    required String description,
+    required String severity,
+    List<File>? images,
+  }) async {
+    try {
+      final cleanedId = bookingId.replaceAll('"', '').replaceAll("'", '').trim();
+      debugPrint('createReport: Creating report for booking $cleanedId');
+      debugPrint('createReport: Title: $title, Description: $description, Severity: $severity');
+      debugPrint('createReport: Images count: ${images?.length ?? 0}');
+
+      // Get token
+      final token = await _getToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại');
+      }
+
+      // Create multipart request
+      final uri = Uri.parse('$baseUrl/Bookings/$cleanedId/reports');
+      final request = http.MultipartRequest('POST', uri);
+
+      // Add headers
+      request.headers.addAll({
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      });
+
+      // Add form fields
+      request.fields['title'] = title;
+      request.fields['description'] = description;
+      request.fields['severity'] = severity;
+
+      // Add image files
+      if (images != null && images.isNotEmpty) {
+        for (int i = 0; i < images.length; i++) {
+          final imageFile = images[i];
+          if (await imageFile.exists()) {
+            final fileBytes = await imageFile.readAsBytes();
+            final fileName = imageFile.path.split('/').last;
+
+            request.files.add(
+              http.MultipartFile.fromBytes(
+                'images',
+                fileBytes,
+                filename: fileName,
+              ),
+            );
+            debugPrint('createReport: Added image $i: $fileName (${fileBytes.length} bytes)');
+          }
+        }
+      }
+
+      debugPrint('createReport: Sending request to ${uri.toString()}');
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      final statusCode = response.statusCode;
+      final body = response.body;
+
+      debugPrint('createReport: Response status: $statusCode');
+      debugPrint('createReport: Response body: ${body.length > 500 ? "${body.substring(0, 500)}..." : body}');
+
+      if (statusCode == 401) {
+        await clearToken();
+        throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại');
+      }
+
+      if (statusCode >= 200 && statusCode < 300) {
+        if (body.isEmpty) {
+          return {'success': true, 'message': 'Tạo report thành công'};
+        }
+        try {
+          return _handleResponse(response);
+        } catch (e) {
+          return {'success': true, 'message': 'Tạo report thành công'};
+        }
+      }
+
+      final errorMsg = _extractErrorMessage(body);
+      throw Exception(errorMsg ?? 'Failed to create report (Status: $statusCode)');
+    } catch (e) {
+      debugPrint('Error creating report: $e');
+      if (e.toString().contains('Exception:')) {
+        rethrow;
+      }
+      throw Exception('Failed to create report: ${e.toString()}');
     }
   }
 
