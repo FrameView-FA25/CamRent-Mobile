@@ -4,16 +4,14 @@ import '../booking/booking_list_screen.dart';
 
 class PaymentWebViewScreen extends StatefulWidget {
   final String paymentUrl;
-  final String? bookingId;
-  final String? paymentId;
-  final String? title;
+  final String bookingId;
+  final String paymentId;
 
   const PaymentWebViewScreen({
     super.key,
     required this.paymentUrl,
-    this.bookingId,
-    this.paymentId,
-    this.title,
+    required this.bookingId,
+    required this.paymentId,
   });
 
   @override

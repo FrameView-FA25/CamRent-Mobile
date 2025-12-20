@@ -16,6 +16,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   String? _error;
   List<BookingModel> _bookings = [];
   Map<String, bool> _processingBookings = {}; // Track which bookings are being processed
+  Map<String, String?> _processingActions = {}; // Track which action is being processed: 'pickup' or 'cancel'
 
   @override
   void initState() {
@@ -312,6 +313,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     
     setState(() {
       _processingBookings[booking.id] = true;
+      _processingActions[booking.id] = 'pickup';
     });
 
     try {
@@ -474,6 +476,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       if (mounted) {
         setState(() {
           _processingBookings[booking.id] = false;
+          _processingActions[booking.id] = null;
         });
       }
     }
@@ -673,6 +676,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     
     setState(() {
       _processingBookings[booking.id] = true;
+      _processingActions[booking.id] = 'cancel';
     });
 
     try {
@@ -752,6 +756,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       if (mounted) {
         setState(() {
           _processingBookings[booking.id] = false;
+          _processingActions[booking.id] = null;
         });
       }
     }
@@ -1017,7 +1022,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                                     SizedBox(
                                                       width: 100,
                                                       child: ElevatedButton(
-                                                        onPressed: _processingBookings[booking.id] == true
+                                                        onPressed: _processingActions[booking.id] != null
                                                             ? null
                                                             : () => _handlePickupBooking(booking),
                                                         style: ElevatedButton.styleFrom(
@@ -1026,7 +1031,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                                                           minimumSize: const Size(0, 32),
                                                         ),
-                                                        child: _processingBookings[booking.id] == true
+                                                        child: _processingActions[booking.id] == 'pickup'
                                                             ? const SizedBox(
                                                                 width: 16,
                                                                 height: 16,
@@ -1064,16 +1069,12 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                                   ],
                                                   // Show "Hủy đơn" button only for Draft (0) and Confirmed (1) bookings
                                                   // Hide for: PickedUp (2), Returned (3), Completed (4), Cancelled (5), Overdue (6)
-                                                  // Also check statusString to ensure "Đã nhận máy" status is excluded
-                                                  if ((booking.status == 0 || booking.status == 1) &&
-                                                      booking.status != 2 &&
-                                                      !booking.statusString.toLowerCase().contains('đã nhận máy') &&
-                                                      !booking.statusString.toLowerCase().contains('pickedup')) ...[
+                                                  if (booking.status == 0 || booking.status == 1) ...[
                                                     const SizedBox(height: 6),
                                                     SizedBox(
                                                       width: 100,
                                                       child: OutlinedButton(
-                                                        onPressed: _processingBookings[booking.id] == true
+                                                        onPressed: _processingActions[booking.id] != null
                                                             ? null
                                                             : () => _handleCancelBooking(booking),
                                                         style: OutlinedButton.styleFrom(
@@ -1082,7 +1083,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                                                           minimumSize: const Size(0, 32),
                                                         ),
-                                                        child: _processingBookings[booking.id] == true
+                                                        child: _processingActions[booking.id] == 'cancel'
                                                             ? const SizedBox(
                                                                 width: 16,
                                                                 height: 16,

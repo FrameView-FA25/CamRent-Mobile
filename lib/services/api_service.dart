@@ -2504,55 +2504,86 @@ class ApiService {
       final cleanedId = bookingId.replaceAll('"', '').replaceAll("'", '').trim();
       debugPrint('updateBookingStatus: Updating booking $cleanedId with isConfirm: $isConfirm, status: $status');
 
-      final requestBody = <String, dynamic>{};
+      // Backend expects status as string (PascalCase format):
+      // Draft, Confirmed, PickedUp, Returned, Completed, Cancelled, Overdue
+      String? normalizedStatus;
       
-      // When updating status, only send status field, not isConfirm
-      // Backend expects status as integer (0-9) based on BookingStatus enum:
-      // 0 = Draft, 1 = Confirmed, 2 = PickedUp, 3 = Returned, 4 = Completed, 5 = Cancelled, 6 = Overdue
       if (status != null && status.isNotEmpty) {
-        // Convert status string to integer enum value
-        int? statusInt;
+        // Normalize status string to PascalCase format expected by backend
         final statusLower = status.toLowerCase().trim();
         
-        // Map status strings to integer values
+        // Map status strings to PascalCase format
         if (statusLower == 'draft' || statusLower == '0') {
-          statusInt = 0; // Draft
+          normalizedStatus = 'Draft';
         } else if (statusLower == 'confirmed' || statusLower == 'confirm' || statusLower == '1') {
-          statusInt = 1; // Confirmed
+          normalizedStatus = 'Confirmed';
         } else if (statusLower == 'pickedup' || statusLower == 'picked_up' || statusLower == '2') {
-          statusInt = 2; // PickedUp
+          normalizedStatus = 'PickedUp';
         } else if (statusLower == 'returned' || statusLower == 'return' || statusLower == '3') {
-          statusInt = 3; // Returned
+          normalizedStatus = 'Returned';
         } else if (statusLower == 'completed' || statusLower == 'complete' || statusLower == '4') {
-          statusInt = 4; // Completed
+          normalizedStatus = 'Completed';
         } else if (statusLower == 'cancelled' || statusLower == 'canceled' || statusLower == 'cancel' || statusLower == '5') {
-          statusInt = 5; // Cancelled
+          normalizedStatus = 'Cancelled';
         } else if (statusLower == 'overdue' || statusLower == '6') {
-          statusInt = 6; // Overdue
+          normalizedStatus = 'Overdue';
         } else {
-          // Try to parse as integer directly
+          // Try to parse as integer and convert to string
           try {
-            statusInt = int.parse(statusLower);
-            if (statusInt < 0 || statusInt > 9) {
-              statusInt = null;
+            final statusInt = int.parse(statusLower);
+            if (statusInt >= 0 && statusInt <= 9) {
+              // Map integer to PascalCase string
+              switch (statusInt) {
+                case 0:
+                  normalizedStatus = 'Draft';
+                  break;
+                case 1:
+                  normalizedStatus = 'Confirmed';
+                  break;
+                case 2:
+                  normalizedStatus = 'PickedUp';
+                  break;
+                case 3:
+                  normalizedStatus = 'Returned';
+                  break;
+                case 4:
+                  normalizedStatus = 'Completed';
+                  break;
+                case 5:
+                  normalizedStatus = 'Cancelled';
+                  break;
+                case 6:
+                  normalizedStatus = 'Overdue';
+                  break;
+                default:
+                  normalizedStatus = null;
+              }
             }
           } catch (e) {
-            statusInt = null;
+            // If it's already in PascalCase or other format, try to use it directly
+            // Check if it matches known status values
+            if (status.isNotEmpty) {
+              final pascalCase = status[0].toUpperCase() + status.substring(1).toLowerCase();
+              if (['Draft', 'Confirmed', 'PickedUp', 'Returned', 'Completed', 'Cancelled', 'Overdue'].contains(pascalCase)) {
+                normalizedStatus = pascalCase;
+              } else if (['Draft', 'Confirmed', 'PickedUp', 'Returned', 'Completed', 'Cancelled', 'Overdue'].contains(status)) {
+                // Already in correct format
+                normalizedStatus = status;
+              } else {
+                normalizedStatus = null;
+              }
+            } else {
+              normalizedStatus = null;
+            }
           }
         }
         
-        if (statusInt != null) {
-          requestBody['status'] = statusInt;
-          debugPrint('updateBookingStatus: Status converted from "$status" to integer $statusInt');
-        } else {
+        if (normalizedStatus == null) {
           throw Exception('Invalid status value: $status. Expected: draft, confirmed, pickedup, returned, completed, cancelled, overdue, or integer 0-9');
         }
-      } else if (isConfirm != null) {
-        // Only send isConfirm if status is not provided
-        requestBody['isConfirm'] = isConfirm;
+        
+        debugPrint('updateBookingStatus: Status normalized from "$status" to "$normalizedStatus"');
       }
-
-      debugPrint('updateBookingStatus: Request body: $requestBody');
 
       // Get headers and verify token
       final headers = await _getHeaders(requiresAuth: true);
@@ -2564,8 +2595,25 @@ class ApiService {
         throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại');
       }
 
+      // Build URL with status as query parameter (according to Swagger UI spec)
+      var uri = Uri.parse('$baseUrl/Bookings/$cleanedId/update-status');
+      if (normalizedStatus != null) {
+        uri = uri.replace(queryParameters: {'status': normalizedStatus});
+        debugPrint('updateBookingStatus: URL with query parameter: $uri');
+      }
+
+      // Also send in body for backward compatibility (if backend needs it)
+      final requestBody = <String, dynamic>{};
+      if (normalizedStatus != null) {
+        requestBody['status'] = normalizedStatus;
+      } else if (isConfirm != null) {
+        requestBody['isConfirm'] = isConfirm;
+      }
+
+      debugPrint('updateBookingStatus: Request body: $requestBody');
+
       final response = await http.put(
-        Uri.parse('$baseUrl/Bookings/$cleanedId/update-status'),
+        uri,
         headers: headers,
         body: jsonEncode(requestBody),
       );
