@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'booking_model.dart';
+import '../contract/contract_signing_screen.dart';
 
 class BookingDetailScreen extends StatefulWidget {
   final BookingModel booking;
@@ -616,9 +617,187 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
               ),
             ),
             const SizedBox(height: 16),
+
+            // Contract Information
+            if (_hasContracts(booking)) ...[
+              _buildContractCard(context, booking),
+              const SizedBox(height: 16),
+            ],
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  bool _hasContracts(BookingModel booking) {
+    final contracts = booking.raw['contracts'];
+    if (contracts is List && contracts.isNotEmpty) {
+      return true;
+    }
+    final contractId = booking.raw['contractId'];
+    if (contractId != null && contractId.toString().isNotEmpty) {
+      return true;
+    }
+    return false;
+  }
+
+  Widget _buildContractCard(BuildContext context, BookingModel booking) {
+    final contracts = booking.raw['contracts'];
+    final contractList = <Map<String, dynamic>>[];
+    
+    if (contracts is List) {
+      for (final contract in contracts) {
+        if (contract is Map<String, dynamic>) {
+          contractList.add(contract);
+        }
+      }
+    } else if (contracts is Map<String, dynamic>) {
+      contractList.add(contracts);
+    }
+    
+    // Also check for contractId field
+    final contractId = booking.raw['contractId'];
+    if (contractId != null && contractId.toString().isNotEmpty && contractList.isEmpty) {
+      contractList.add({'id': contractId.toString()});
+    }
+
+    if (contractList.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.description,
+                  color: Theme.of(context).colorScheme.primary,
+                  size: 24,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Hợp đồng (${contractList.length})',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[800],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ...contractList.asMap().entries.map((entry) {
+              final index = entry.key;
+              final contract = entry.value;
+              final contractId = contract['id']?.toString() ?? '';
+              final isSigned = contract['isSigned'] == true ||
+                              contract['signedAt'] != null ||
+                              contract['signedFileUrl'] != null ||
+                              contract['status']?.toString().toLowerCase() == 'signed';
+              
+              return Column(
+                children: [
+                  if (index > 0) const Divider(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Hợp đồng ${index + 1}',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey[800],
+                              ),
+                            ),
+                            if (contractId.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'ID: ${contractId.length >= 12 ? "${contractId.substring(0, 12)}..." : contractId}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isSigned
+                                    ? Colors.green.withOpacity(0.1)
+                                    : Colors.orange.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isSigned
+                                      ? Colors.green.withOpacity(0.3)
+                                      : Colors.orange.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    isSigned ? Icons.check_circle : Icons.pending,
+                                    size: 16,
+                                    color: isSigned ? Colors.green : Colors.orange,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    isSigned ? 'Đã ký' : 'Chưa ký',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: isSigned ? Colors.green : Colors.orange,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (contractId.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.visibility),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => ContractSigningScreen(
+                                  contractId: contractId,
+                                  bookingData: booking.raw,
+                                  totalAmount: booking.totalPrice,
+                                  depositAmount: booking.snapshotDepositAmount,
+                                ),
+                              ),
+                            );
+                          },
+                          tooltip: 'Xem hợp đồng',
+                        ),
+                    ],
+                  ),
+                ],
+              );
+            }),
+          ],
         ),
       ),
     );

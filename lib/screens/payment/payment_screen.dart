@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../services/api_service.dart';
 import '../booking/booking_list_screen.dart';
 import 'payment_confirmation_screen.dart';
+import '../contract/contract_signing_screen.dart';
 
 class PaymentScreen extends StatefulWidget {
   final Map<String, dynamic> bookingData;
@@ -152,67 +153,343 @@ class _PaymentScreenState extends State<PaymentScreen> {
     );
   }
 
-  void _showInsufficientBalanceDialog() {
+  void _showInsufficientBalanceDialog() async {
     if (!mounted) return;
     
     final calculatedTotal = _calculatePaymentAmount();
     final amount = widget.depositAmount > 0 ? widget.depositAmount : calculatedTotal;
     
+    // Fetch wallet balance
+    double? walletBalance;
+    try {
+      final walletData = await ApiService.getWalletInfo();
+      walletBalance = (walletData['balance'] ?? walletData['amount'] ?? 0.0).toDouble();
+    } catch (e) {
+      debugPrint('PaymentScreen: Could not fetch wallet balance: $e');
+      walletBalance = null;
+    }
+    
+    if (!mounted) return;
+    
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
+      builder: (context) => Dialog(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24),
         ),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
-            SizedBox(width: 8),
-            Text('Ví không đủ tiền'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Số dư trong ví của bạn không đủ để thanh toán.',
-              style: TextStyle(fontSize: 14),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Số tiền cần thanh toán:',
-                  style: TextStyle(fontSize: 14),
-                ),
-                Text(
-                  _formatCurrency(amount),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.red,
-                  ),
-                ),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.orange[50]!,
+                Colors.orange[100]!,
+                Colors.white,
               ],
             ),
-            const SizedBox(height: 12),
-            const Text(
-              'Vui lòng nạp thêm tiền vào ví hoặc chọn phương thức thanh toán khác.',
-              style: TextStyle(fontSize: 14),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-            },
-            child: const Text('Đóng'),
           ),
-        ],
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header with gradient
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.orange[400]!,
+                      Colors.orange[600]!,
+                    ],
+                  ),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.account_balance_wallet_rounded,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    const Expanded(
+                      child: Text(
+                        'Ví không đủ tiền',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Content
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Info message
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.orange[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.orange[200]!,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline_rounded,
+                            color: Colors.orange[700],
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Số dư trong ví của bạn không đủ để thanh toán.',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.orange[900],
+                                fontWeight: FontWeight.w500,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Wallet balance card
+                    if (walletBalance != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.grey[300]!,
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.account_balance_wallet_outlined,
+                                  color: Colors.grey[700],
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Số dư hiện tại:',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey[700],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Text(
+                              _formatCurrency(walletBalance),
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[900],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    // Required amount card
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.red[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.red[200]!,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.payment_rounded,
+                                color: Colors.red[700],
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Số tiền cần thanh toán:',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.red[700],
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            _formatCurrency(amount),
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red[900],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Shortage amount
+                    if (walletBalance != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.orange[100]!,
+                              Colors.orange[200]!,
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.orange[400]!,
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.remove_circle_outline_rounded,
+                                  color: Colors.orange[800],
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Còn thiếu:',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.orange[900],
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Text(
+                              _formatCurrency(amount - walletBalance),
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange[900],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    // Action message
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.blue[200]!,
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.lightbulb_outline_rounded,
+                            color: Colors.blue[700],
+                            size: 18,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Vui lòng nạp thêm tiền vào ví hoặc chọn phương thức thanh toán khác.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.blue[900],
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Actions
+              Container(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange[600],
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 2,
+                    ),
+                    child: const Text(
+                      'Đã hiểu',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -631,6 +908,74 @@ class _PaymentScreenState extends State<PaymentScreen> {
     super.initState();
     // Removed auto-open payment URL - user should choose payment method first
     // Payment URL will be opened only when user selects PayOS and clicks "Thanh toán"
+    
+    // Kiểm tra contract đã ký chưa trước khi cho phép thanh toán
+    _checkContractStatus();
+  }
+
+  Future<void> _checkContractStatus() async {
+    // Tìm contractId từ bookingData
+    String? contractId;
+    
+    if (widget.bookingData.containsKey('contractId')) {
+      contractId = widget.bookingData['contractId']?.toString();
+    } else if (widget.bookingData.containsKey('contracts')) {
+      final contracts = widget.bookingData['contracts'];
+      if (contracts is List && contracts.isNotEmpty) {
+        final firstContract = contracts.first;
+        if (firstContract is Map<String, dynamic>) {
+          contractId = firstContract['id']?.toString();
+        }
+      } else if (contracts is Map<String, dynamic>) {
+        contractId = contracts['id']?.toString();
+      }
+    }
+    
+    // Nếu có contractId, kiểm tra contract đã ký chưa
+    if (contractId != null && contractId.isNotEmpty) {
+      try {
+        final contractInfo = await ApiService.getContractInfo(contractId: contractId);
+        final isSigned = contractInfo['isSigned'] == true ||
+                        contractInfo['signedAt'] != null ||
+                        contractInfo['signedFileUrl'] != null ||
+                        contractInfo['status']?.toString().toLowerCase() == 'signed';
+        
+        debugPrint('PaymentScreen: Contract signed status: $isSigned');
+        
+        if (!isSigned && mounted) {
+          // Contract chưa ký, redirect về ContractSigningScreen
+          debugPrint('PaymentScreen: Contract is not signed, redirecting to ContractSigningScreen');
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Vui lòng ký hợp đồng trước khi thanh toán'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          
+          // Delay một chút để user thấy message
+          await Future.delayed(const Duration(milliseconds: 500));
+          
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ContractSigningScreen(
+                  contractId: contractId!,
+                  bookingData: widget.bookingData,
+                  totalAmount: widget.totalAmount,
+                  depositAmount: widget.depositAmount,
+                ),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('PaymentScreen: Error checking contract status: $e');
+        // Nếu không thể kiểm tra, vẫn cho phép thanh toán (có thể contract không tồn tại)
+      }
+    }
   }
 
   String? _getPaymentUrl() {

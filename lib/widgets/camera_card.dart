@@ -245,25 +245,30 @@ class _CameraCardState extends State<CameraCard> {
     if (_isLoading && _cachedRanges == null) {
       return Container(
         padding: const EdgeInsets.symmetric(
-          horizontal: 8,
-          vertical: 6,
+          horizontal: 10,
+          vertical: 8,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
           children: [
             SizedBox(
-              width: 12,
-              height: 12,
+              width: 14,
+              height: 14,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
                 color: Colors.grey[400],
               ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             Text(
               'Đang kiểm tra...',
               style: TextStyle(
-                fontSize: 10,
+                fontSize: 11,
                 color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],
@@ -275,31 +280,43 @@ class _CameraCardState extends State<CameraCard> {
     if (_cachedRanges == null || _cachedRanges!.isEmpty) {
       return Container(
         padding: const EdgeInsets.symmetric(
-          horizontal: 8,
-          vertical: 6,
+          horizontal: 10,
+          vertical: 8,
         ),
         decoration: BoxDecoration(
-          color: Colors.green[50],
-          borderRadius: BorderRadius.circular(6),
+          gradient: LinearGradient(
+            colors: [Colors.green[50]!, Colors.green[100]!],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: Colors.green[200]!,
-            width: 1,
+            color: Colors.green[300]!,
+            width: 1.5,
           ),
         ),
         child: Row(
           children: [
-            Icon(
-              Icons.check_circle_outline,
-              size: 12,
-              color: Colors.green[700],
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.green[400],
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.check_circle,
+                size: 14,
+                color: Colors.white,
+              ),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 8),
             Text(
               'Máy ảnh đang sẵn sàng',
               style: TextStyle(
-                fontSize: 10,
+                fontSize: 11,
                 color: Colors.green[900],
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.2,
               ),
             ),
           ],
@@ -315,73 +332,282 @@ class _CameraCardState extends State<CameraCard> {
       return '$day/$month/$year';
     }
 
-    // Get the first (upcoming) booking
-    final firstBooking = _cachedRanges!.first;
-    
+    String formatTime(DateTime date) {
+      final hour = date.hour.toString().padLeft(2, '0');
+      final minute = date.minute.toString().padLeft(2, '0');
+      return '$hour:$minute';
+    }
+
+    // Filter only upcoming or current bookings
+    final now = DateTime.now();
+    final upcomingBookings = _cachedRanges!
+        .where((range) => range.endDate.isAfter(now))
+        .toList();
+
+    if (upcomingBookings.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 8,
+        ),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.green[50]!, Colors.green[100]!],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: Colors.green[300]!,
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.green[400],
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.check_circle,
+                size: 14,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Máy ảnh đang sẵn sàng',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.green[900],
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Show all bookings in a modern, scrollable list
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 8,
-        vertical: 6,
+      constraints: const BoxConstraints(
+        maxHeight: 120,
       ),
       decoration: BoxDecoration(
-        color: Colors.orange[50],
-        borderRadius: BorderRadius.circular(6),
+        gradient: LinearGradient(
+          colors: [
+            Colors.orange[50]!,
+            Colors.orange[100]!,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: Colors.orange[200]!,
-          width: 1,
+          color: Colors.orange[300]!,
+          width: 1.5,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Icon(
-                Icons.event_busy,
-                size: 12,
-                color: Colors.orange[700],
-              ),
-              const SizedBox(width: 4),
-              Text(
-                'Đã được đặt',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.orange[900],
-                  fontWeight: FontWeight.w600,
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[400],
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(
+                    Icons.event_busy_rounded,
+                    size: 14,
+                    color: Colors.white,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Bắt đầu: ${formatDate(firstBooking.startDate)}',
-            style: TextStyle(
-              fontSize: 9,
-              color: Colors.orange[800],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          Text(
-            'Kết thúc: ${formatDate(firstBooking.endDate)}',
-            style: TextStyle(
-              fontSize: 9,
-              color: Colors.orange[800],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          if (_cachedRanges!.length > 1)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                '+${_cachedRanges!.length - 1} lịch đặt khác',
-                style: TextStyle(
-                  fontSize: 8,
-                  color: Colors.orange[700],
-                  fontStyle: FontStyle.italic,
+                const SizedBox(width: 8),
+                Text(
+                  'Đã được đặt (${upcomingBookings.length})',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.orange[900],
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                  ),
                 ),
-              ),
+              ],
             ),
+          ),
+          // Bookings list
+          Expanded(
+            child: ListView.builder(
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              itemCount: upcomingBookings.length,
+              itemBuilder: (context, index) {
+                final booking = upcomingBookings[index];
+                final isActive = booking.startDate.isBefore(now) && 
+                                booking.endDate.isAfter(now);
+                
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isActive 
+                        ? Colors.orange[200] 
+                        : Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isActive 
+                          ? Colors.orange[400]! 
+                          : Colors.orange[200]!,
+                      width: isActive ? 1.5 : 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.orange[100]!.withOpacity(0.5),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Timeline indicator
+                      Container(
+                        width: 3,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: isActive 
+                              ? Colors.orange[600]! 
+                              : Colors.orange[400]!,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      // Booking details
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  isActive 
+                                      ? Icons.access_time_rounded 
+                                      : Icons.schedule_rounded,
+                                  size: 12,
+                                  color: Colors.orange[800],
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  isActive ? 'Đang thuê' : 'Sắp tới',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    color: Colors.orange[800],
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Bắt đầu',
+                                        style: TextStyle(
+                                          fontSize: 8,
+                                          color: Colors.orange[700],
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        formatDate(booking.startDate),
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.orange[900],
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Text(
+                                        formatTime(booking.startDate),
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          color: Colors.orange[800],
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  width: 1,
+                                  height: 35,
+                                  color: Colors.orange[300],
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Kết thúc',
+                                        style: TextStyle(
+                                          fontSize: 8,
+                                          color: Colors.orange[700],
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        formatDate(booking.endDate),
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.orange[900],
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Text(
+                                        formatTime(booking.endDate),
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          color: Colors.orange[800],
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
         ],
       ),
     );
@@ -401,7 +627,7 @@ class _CameraCardState extends State<CameraCard> {
     return Container(
       constraints: const BoxConstraints(
         minHeight: 420,
-        maxHeight: 420,
+        maxHeight: 550,
       ),
       decoration: BoxDecoration(
         color: Colors.white,

@@ -955,33 +955,96 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       debugPrint('CheckoutScreen: Final contractId: $contractId');
 
       // Điều hướng dựa trên contract và status
-      // Nếu có contractId, đi đến màn hình ký hợp đồng
+      // Nếu có contractId, kiểm tra contract đã ký chưa
       if (contractId != null && contractId.isNotEmpty) {
-        debugPrint('CheckoutScreen: Navigating to ContractSigningScreen with contractId: $contractId');
+        debugPrint('CheckoutScreen: Found contractId, checking if contract is signed...');
         
-        // Ensure bookingId is explicitly set in bookingData (not contractId)
-        // This prevents PaymentScreen from accidentally using contractId
-        if (bookingId != null && bookingId.isNotEmpty) {
-          bookingData['id'] = bookingId;
-          bookingData['bookingId'] = bookingId;
-          debugPrint('CheckoutScreen: Set bookingId in bookingData: $bookingId');
-        }
-        
-        // Serialize bookingData to ensure all DateTime objects are converted to strings
-        // This prevents serialization errors when passing data through navigation
-        final serializedBookingData = _serializeBookingData(bookingData);
-        
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ContractSigningScreen(
-              contractId: contractId!,
-              bookingData: serializedBookingData,
-              totalAmount: widget.totalAmount,
-              depositAmount: widget.depositAmount,
+        try {
+          // Kiểm tra contract đã ký chưa
+          final contractInfo = await ApiService.getContractInfo(contractId: contractId);
+          final isSigned = contractInfo['isSigned'] == true ||
+                          contractInfo['signedAt'] != null ||
+                          contractInfo['signedFileUrl'] != null ||
+                          contractInfo['status']?.toString().toLowerCase() == 'signed';
+          
+          debugPrint('CheckoutScreen: Contract signed status: $isSigned');
+          
+          if (isSigned) {
+            // Contract đã ký, có thể đi đến payment
+            debugPrint('CheckoutScreen: Contract is signed, navigating to PaymentScreen');
+            
+            // Ensure bookingId is in bookingData for PaymentScreen
+            if (bookingId != null && bookingId.isNotEmpty) {
+              bookingData['id'] = bookingId;
+              bookingData['bookingId'] = bookingId;
+              debugPrint('CheckoutScreen: Set bookingId in bookingData: $bookingId');
+            }
+            
+            // Serialize bookingData to ensure all DateTime objects are converted to strings
+            final serializedBookingData = _serializeBookingData(bookingData);
+            
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PaymentScreen(
+                  bookingData: serializedBookingData,
+                  totalAmount: widget.totalAmount,
+                  depositAmount: widget.depositAmount,
+                ),
+              ),
+            );
+          } else {
+            // Contract chưa ký, đi đến màn hình ký hợp đồng
+            debugPrint('CheckoutScreen: Contract is not signed, navigating to ContractSigningScreen');
+            
+            // Ensure bookingId is explicitly set in bookingData (not contractId)
+            // This prevents PaymentScreen from accidentally using contractId
+            if (bookingId != null && bookingId.isNotEmpty) {
+              bookingData['id'] = bookingId;
+              bookingData['bookingId'] = bookingId;
+              debugPrint('CheckoutScreen: Set bookingId in bookingData: $bookingId');
+            }
+            
+            // Serialize bookingData to ensure all DateTime objects are converted to strings
+            // This prevents serialization errors when passing data through navigation
+            final serializedBookingData = _serializeBookingData(bookingData);
+            
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ContractSigningScreen(
+                  contractId: contractId!,
+                  bookingData: serializedBookingData,
+                  totalAmount: widget.totalAmount,
+                  depositAmount: widget.depositAmount,
+                ),
+              ),
+            );
+          }
+        } catch (e) {
+          debugPrint('CheckoutScreen: Error checking contract status: $e');
+          // Nếu không thể kiểm tra contract, đi đến màn hình ký hợp đồng để user có thể ký
+          debugPrint('CheckoutScreen: Navigating to ContractSigningScreen due to error');
+          
+          if (bookingId != null && bookingId.isNotEmpty) {
+            bookingData['id'] = bookingId;
+            bookingData['bookingId'] = bookingId;
+          }
+          
+          final serializedBookingData = _serializeBookingData(bookingData);
+          
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ContractSigningScreen(
+                contractId: contractId!,
+                bookingData: serializedBookingData,
+                totalAmount: widget.totalAmount,
+                depositAmount: widget.depositAmount,
+              ),
             ),
-          ),
-        );
+          );
+        }
       } else {
         // Nếu không có contractId, đi đến payment
         // Điều này xảy ra khi booking ở trạng thái "PendingApproval" và cần thanh toán trước
